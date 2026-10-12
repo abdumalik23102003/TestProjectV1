@@ -1,0 +1,253 @@
+╔════════════════════════════════════════════════════════════════════════════════╗
+║                    🚀 QUICK SETUP REFERENCE (CHEAT SHEET)                     ║
+╚════════════════════════════════════════════════════════════════════════════════╝
+
+📍 PROJECT LOCATION: /Users/macbook/PhpstormProjects/TestProjectV1
+
+╔════════════════════════════════════════════════════════════════════════════════╗
+║  STEP 1: TERMINAL'DA PROYEKTGA KIRING                                         ║
+╚════════════════════════════════════════════════════════════════════════════════╝
+
+$ cd /Users/macbook/PhpstormProjects/TestProjectV1
+
+✅ Tekshirig: ls -la
+
+╔════════════════════════════════════════════════════════════════════════════════╗
+║  STEP 2: COMPOSER INSTALL                                                     ║
+╚════════════════════════════════════════════════════════════════════════════════╝
+
+$ composer install
+
+⏳ Kutish: 2-3 daqiqa
+
+✅ Tugashgach: "✓ Composer completed"
+
+╔════════════════════════════════════════════════════════════════════════════════╗
+║  STEP 3: .env FILE EDIT (4 TA TOKEN O'ZGARTIRILISHI KERAK)                    ║
+╚════════════════════════════════════════════════════════════════════════════════╝
+
+$ nano .env  (yoki PhpStorm'da oching)
+
+═══════════════════════════════════════════════════════════════════════════════
+
+LINE 52: TELEGRAM_BOT_TOKEN
+
+OLDIN:
+TELEGRAM_BOT_TOKEN=<YOUR_TELEGRAM_BOT_TOKEN_HERE>
+
+KEYIN:
+TELEGRAM_BOT_TOKEN=[REDACTED]:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh
+
+🔍 QAYDAN OLISH:
+   1. Telegram'da @BotFather search
+   2. /newbot yuboring
+   3. Bot nomi kiriting (MyLibraryBot)
+   4. Username kiriting (my_library_bot_v1)
+   5. Token ko'rishingiz kerak → Copy to .env
+
+═══════════════════════════════════════════════════════════════════════════════
+
+LINE 53: TELEGRAM_BOT_USERNAME
+
+OLDIN:
+TELEGRAM_BOT_USERNAME=<YOUR_BOT_USERNAME>
+
+KEYIN:
+TELEGRAM_BOT_USERNAME=my_library_bot_v1
+
+🔍 QAYDAN OLISH:
+   BotFather'dan olingan username (@ belgisisiz)
+
+═══════════════════════════════════════════════════════════════════════════════
+
+LINE 54: TELEGRAM_WEBHOOK_URL
+
+🌍 LOCAL TESTING UCHUN (Ngrok):
+
+TERMINAL'DA (YA'NI YANGI TERMINAL):
+$ brew install ngrok
+$ ngrok http 8000
+
+Keyin URL ko'rasiz: https://1234-567-890.ngrok.io
+
+.env'ga:
+TELEGRAM_WEBHOOK_URL=https://1234-567-890.ngrok.io/api/telegram/webhook
+
+🌍 PRODUCTION UCHUN:
+TELEGRAM_WEBHOOK_URL=https://yourdomain.com/api/telegram/webhook
+
+═══════════════════════════════════════════════════════════════════════════════
+
+LINE 62: ADMIN_USER_ID
+
+OLDIN:
+ADMIN_USER_ID=<YOUR_TELEGRAM_ADMIN_ID>
+
+KEYIN:
+ADMIN_USER_ID=1234567890
+
+🔍 QAYDAN OLISH:
+   1. Telegram'da @userinfobot search
+   2. /start yuboring
+   3. Bot sizga ID beradi → Copy to .env
+
+═══════════════════════════════════════════════════════════════════════════════
+
+Saqlash (nano):
+Ctrl+X → Y → Enter
+
+Saqlash (PhpStorm):
+Cmd+S
+
+✅ DONE!
+
+╔════════════════════════════════════════════════════════════════════════════════╗
+║  STEP 4: DOCKER CONTAINERS BOSHLANG                                          ║
+╚════════════════════════════════════════════════════════════════════════════════╝
+
+$ ./vendor/bin/sail up -d
+
+⏳ Kutish: 30-60 sekund
+
+✅ Tugashgach: containers running (MySQL, Redis, App)
+
+╔════════════════════════════════════════════════════════════════════════════════╗
+║  STEP 5: DATABASE MIGRATIONS                                                  ║
+╚════════════════════════════════════════════════════════════════════════════════╝
+
+$ ./vendor/bin/sail artisan migrate
+
+✅ Tugashgach: "✓ Database migrations completed"
+
+═══════════════════════════════════════════════════════════════════════════════
+
+$ ./vendor/bin/sail artisan db:seed
+
+✅ Tugashgach: "✓ Seeding completed"
+
+╔════════════════════════════════════════════════════════════════════════════════╗
+║  STEP 6: STORAGE DIRECTORY O'RNATISH                                         ║
+╚════════════════════════════════════════════════════════════════════════════════╝
+
+$ mkdir -p storage/private_materials && chmod 700 storage/private_materials
+
+✅ DONE!
+
+╔════════════════════════════════════════════════════════════════════════════════╗
+║  STEP 7: WEBHOOK SOZLASH (TINKER'DA)                                          ║
+╚════════════════════════════════════════════════════════════════════════════════╝
+
+$ ./vendor/bin/sail artisan tinker
+
+Prompt ko'rasiz: Psy Shell v0.x.x >>>
+
+Type qilb enter bosing:
+
+>>> $telegram = app(App\Services\TelegramService::class);
+>>> $telegram->setWebhook(config('telegram.webhook_url'));
+
+JAVOB (MUVAFFAQIYAT):
+=> [
+     "ok" => true,
+     "result" => true,
+     "description" => "Webhook was set"
+   ]
+
+✅ Webhook Set!
+
+Exit:
+>>> exit
+
+╔════════════════════════════════════════════════════════════════════════════════╗
+║  STEP 8: TEST QILISH (TELEGRAM'DA)                                            ║
+╚════════════════════════════════════════════════════════════════════════════════╝
+
+1. Telegram'da siz yaratgan bot'ni qidiring (username bilan)
+2. /start yuboring
+3. Bot javob berishi kerak:
+
+   Rolni tanlang:
+   [👨‍🏫 Ustozman]
+   [🎓 O'quvchiman]
+   [ℹ️ Yordam]
+
+✅ BOT ISHLAYDI!
+
+╔════════════════════════════════════════════════════════════════════════════════╗
+║  MUHIM COMMANDLAR                                                              ║
+╚════════════════════════════════════════════════════════════════════════════════╝
+
+# Sail start
+./vendor/bin/sail up -d
+
+# Sail stop
+./vendor/bin/sail down
+
+# Database fresh (barcha data o'chib ketadi!)
+./vendor/bin/sail artisan migrate:fresh --seed
+
+# Logs ko'rish
+./vendor/bin/sail tail
+
+# Tinker shell
+./vendor/bin/sail artisan tinker
+
+# SSH container'ga kirish
+./vendor/bin/sail shell
+
+# Cache clear
+./vendor/bin/sail artisan cache:clear
+
+╔════════════════════════════════════════════════════════════════════════════════╗
+║  XATOLAR VA FIXLAR                                                             ║
+╚════════════════════════════════════════════════════════════════════════════════╝
+
+❌ "Connection refused"
+   ✅ Fix: ./vendor/bin/sail up -d
+
+❌ "TELEGRAM_BOT_TOKEN not set"
+   ✅ Fix: .env'da line 52'da token qo'ying
+
+❌ "Database connection failed"
+   ✅ Fix: ./vendor/bin/sail artisan migrate --fresh --seed
+
+❌ "Webhook not responding"
+   ✅ Fix: 
+   - HTTPS bo'lishi kerak (http emas!)
+   - Ngrok'dan yangi URL oling: ngrok http 8000
+   - .env'ga yangi URL qo'ying
+   - Tinker'da qayta: $telegram->setWebhook(config('telegram.webhook_url'));
+
+╔════════════════════════════════════════════════════════════════════════════════╗
+║  QAYSI FAYL QANDAY?                                                            ║
+╚════════════════════════════════════════════════════════════════════════════════╝
+
+📖 START_HERE_STEP_BY_STEP.md      ← DETAILED SETUP (Bu hujjat!)
+📖 README_QUICK_INDEX.md            ← Quick overview
+📖 COMPLETE_SUMMARY.md              ← All tokens & deployment
+📖 SETUP_CHECKLIST.md               ← Step-by-step
+📖 IMPLEMENTATION_GUIDE.md          ← Full architecture
+
+💻 CODE FILES:
+app/Http/Controllers/               ← HTTP logic
+app/Services/                       ← Business logic
+app/Models/                         ← Database
+database/migrations/                ← Schema
+routes/api.php                      ← Routes
+
+⚙️ CONFIG FILES:
+.env                               ← Tokens & settings
+config/telegram.php                ← Bot config
+config/materials.php               ← File limits
+
+╔════════════════════════════════════════════════════════════════════════════════╗
+║  TUGADI! 🎉                                                                    ║
+╚════════════════════════════════════════════════════════════════════════════════╝
+
+Agar hamma ✅ ishlasa, loyiha READY FOR PRODUCTION!
+
+Savollar? START_HERE_STEP_BY_STEP.md faylni AI'ga pass qiling.
+
+HAPPY CODING! 💻🚀
+
+═════════════════════════════════════════════════════════════════════════════════
