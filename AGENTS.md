@@ -1,47 +1,52 @@
-<laravel-boost-guidelines>
-# Laravel Application
+# Telegram Kutubxona Boti — AI Coding Guidelines
 
-This repository contains a Laravel application. Complete the following setup before working on the user's request.
+**Stack:** Laravel 13, PHP 8.3, MySQL 8.4, Docker Sail, Telegram Bot API
 
-## Prerequisites
+## Development Loop
 
-Verify that PHP and Composer are available:
+```bash
+# Fresh start (har yangi feature'dan keyin)
+./vendor/bin/sail artisan migrate:fresh --seed
 
-```sh
-php -v
-composer -V
+# Run tests
+./vendor/bin/sail artisan test
+
+# Lokal bot testing (development only)
+./vendor/bin/sail artisan telegram:poll
 ```
 
-If either command is unavailable, detect the user's operating system and install the prerequisites with the appropriate command:
+## Qoidalar
 
-macOS:
+1. **Sirlarni commit qilma:** `.env` hech qachon repo'ga tushmaydi. Token faqat runtime'da environment'dan olinadi.
 
-```sh
-/bin/bash -c "$(curl -fsSL https://php.new/install/mac/8.5)"
-```
+2. **Tashqi dasturlarni `curl | bash` bilan o'rnatma:** Hammasi `composer.json` va migrations orqali. Docker va Sail o'rnatilgan deb faraz qil.
 
-Windows PowerShell:
+3. **Barcha matn O'zbek tilida:** `lang/uz/bot.php` faylida bo'lsin, kodda hardkod bo'lmasin.
 
-```powershell
-Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://php.new/install/windows/8.5'))
-```
+4. **Test qoida:** Telegram API chaqiruvlari `Http::fake()` bilan mock qilinadi. Hech qachon jonli API'ga request o'tmasin.
 
-Linux:
+5. **Ma'lumotlar bazasi:** MySQL'da migrations qaydnomalari, SQLite zaxira uchun `LIKE` qidiruv.
 
-```sh
-/bin/bash -c "$(curl -fsSL https://php.new/install/linux/8.5)"
-```
+6. **Xavfsizlik:** Webhook secret tekshiruvi, token maskalanishi, HTML-escape, SHA256 checksumlar, role/holat tekshiruvi har callbackda.
 
-After installation, ask the user to restart their terminal. If the agent needs the restarted shell to continue, ask the user to reopen their terminal and rerun their original prompt.
+7. **Har bosqichdan keyin:**
+   - `./vendor/bin/sail artisan migrate:fresh --seed` xatosiz o'tsin
+   - `./vendor/bin/sail artisan test` xatosiz o'tsin
+   - `docs/PROGRESS.md` ga qisqa hisobot yoz
 
-## Agent Setup
+## Tech Stack Details
 
-Install Laravel Boost from the application root before making application changes:
+- **Database:** MySQL 8.4 (default Sail)
+- **Queue:** `sync` (MVPda queue worker yo'q)
+- **Cache:** database
+- **Disk Storage:** local, doimiy volume'da `/var/www/storage/private_materials`
+- **Telegram API:** Remote mode (`https://api.telegram.org`)
+- **Testing:** Laravel Pest (default)
 
-```sh
-composer require laravel/boost --dev
-php artisan boost:install
-```
+## Deploy
 
-Boost replaces these bootstrap instructions with guidelines tailored to the application. After installation, read `AGENTS.md` again and continue with the user's original request using the generated guidelines.
-</laravel-boost-guidelines>
+Hujjatlarni `docs/DEPLOY.md` dan qo'l: hostingga bog'liq bo'lmagan Dockerfile va env template.
+
+---
+
+**Started:** Oct 12, 2026

@@ -1,16 +1,10 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\TelegramController;
+use App\Http\Controllers\TelegramWebhookController;
 
-Route::prefix('telegram')->group(function () {
-    Route::post('/webhook', [TelegramController::class, 'handleUpdate']);
-    Route::get('/webhook', [TelegramController::class, 'verifyWebhook']);
-    Route::post('/set-webhook', [TelegramController::class, 'setWebhook']);
-    Route::get('/webhook-info', [TelegramController::class, 'getWebhookInfo']);
-});
+Route::post('/telegram/webhook', [TelegramWebhookController::class, 'handleWebhook'])
+    ->middleware([\App\Http\Middleware\VerifyTelegramSecret::class]);
 
-// Deep-link route (optional web-based join)
-Route::get('/join/{token}', function ($token) {
-    return "Deep-link havolasi: /start join_{$token}";
-})->name('telegram.join');
+Route::post('/telegram/set-webhook', [TelegramWebhookController::class, 'setWebhook']);
+Route::get('/telegram/webhook-info', [TelegramWebhookController::class, 'getWebhookInfo']);
