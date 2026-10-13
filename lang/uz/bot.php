@@ -110,4 +110,28 @@ return [
     'optional' => "ixtiyoriy",
     'default' => "standart",
     'unknown_action' => "❌ Noma'lum amal. Qayta urinib ko'ring.",
+
+    // Audit actions
+    'audit_action_user_registered' => '📝 Foydalanuvchi ro\'yxatdan o\'tdi',
+    'audit_action_role_selected' => '👥 Rol tanlandi',
+    'audit_action_user_role_changed' => '👤 Rol o\'zgartirildi',
+    'audit_action_teacher_approved' => '✅ Ustoz tasdiqlandi',
+    'audit_action_teacher_rejected' => '❌ Ustoz rad etildi',
+    'audit_action_user_blocked' => '🚫 Foydalanuvchi bloklandi',
+    'audit_action_user_unblocked' => '✅ Foydalanuvchi blokdan chiqarildi',
+    'audit_action_material_uploaded' => '📤 Material yuklandi',
+    'audit_action_material_deleted' => '🗑 Material o\'chirildi',
+    'audit_action_material_downloaded' => '📥 Material yuklab olindi',
+    'audit_action_material_searched' => '🔎 Material qidirildi',
+    'audit_action_teacher_student_connected' => '🔗 Ustoz-o\'quvchi bog\'landi',
+    'audit_action_teacher_student_disconnected' => '🔗 Bog\'lanish bekor qilindi',
+    'audit_action_upload_started' => '📤 Yuklash boshlandi',
+    'audit_action_search_started' => '🔎 Qidiruv boshlandi',
+
+    // Audit subjects
+    'audit_subject_user' => 'Foydalanuvchi',
+    'audit_subject_material' => 'Material',
+    'audit_subject_search' => 'Qidiruv',
+    'audit_subject_connection' => 'Bog\'lanish',
+    'audit_subject_registration' => 'Ro\'yxatdan o\'tish',
 ];

@@ -5,6 +5,7 @@ namespace App\Telegram\Handlers;
 use App\Telegram\UpdateContext;
 use App\Telegram\TelegramClient;
 use App\Services\SessionService;
+use App\Services\AuditService;
 
 class StudentHandler
 {
@@ -23,6 +24,10 @@ class StudentHandler
 
     protected function search(UpdateContext $ctx, TelegramClient $client): void
     {
+        if ($ctx->user) {
+            app(AuditService::class)->log('search_started', 'search', null, $ctx->user);
+        }
+
         SessionService::startWizard(
             $ctx->telegramUserId,
             'search',

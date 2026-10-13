@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Telegram\UpdateContext;
 use App\Telegram\TelegramClient;
 use App\Telegram\Keyboard;
+use App\Services\AuditService;
 
 class AdminHandler
 {
@@ -92,6 +93,12 @@ class AdminHandler
         $teacher->teacher_approved_at = now();
         $teacher->save();
 
+        // Log approval
+        $admin = User::where('telegram_user_id', $ctx->telegramUserId)->first();
+        if ($admin) {
+            app(AuditService::class)->logTeacherApproved($admin, $teacher);
+        }
+
         // Admin tasdiqlaganini tasdiqlash
         $client->answerCallbackQuery(
             $this->getCallbackId($ctx),
@@ -122,8 +129,19 @@ class AdminHandler
 
     protected function viewAuditLog(UpdateContext $ctx, TelegramClient $client): void
     {
-        $logs = \App\Models\AuditLog::latest()->limit(10)->get();
-        $text = __('bot.audit_log', ['logs' => json_encode($logs->toArray())]);
+        $logs = app(AuditService::class)->getLatest(10);
+
+        if ($logs->isEmpty()) {
+            $client->sendMessage($ctx->chatId, "💻 Hali audit loglar yo'q.");
+            return;
+        }
+
+        $text = "💾 <b>Oxirgi Audit Loglar</b>\n\n";
+
+        foreach ($logs as $log) {
+            $text .= app(AuditService::class)->formatForDisplay($log) . "\n";
+        }
+
         $client->sendMessage($ctx->chatId, $text);
     }
 

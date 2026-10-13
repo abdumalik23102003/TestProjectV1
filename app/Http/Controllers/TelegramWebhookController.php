@@ -17,6 +17,7 @@ use App\Helpers\HtmlHelper;
 use App\Helpers\StringHelper;
 use App\Services\SessionService;
 use App\Services\SearchService;
+use App\Services\AuditService;
 use App\Models\User;
 use Throwable;
 
@@ -362,6 +363,9 @@ class TelegramWebhookController extends Controller
         }
 
         SessionService::clearSession($ctx->telegramUserId, 'registration');
+
+        // Log registration
+        app(AuditService::class)->logRegistration($user, $isAdmin ? 'admin' : $role);
 
         if ($isAdmin) {
             $menu = Menus::adminMain();

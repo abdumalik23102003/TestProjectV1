@@ -8,6 +8,7 @@ use App\Telegram\Keyboard;
 use App\Models\User;
 use App\Helpers\HtmlHelper;
 use App\Services\SessionService;
+use App\Services\AuditService;
 
 class RoleHandler
 {
@@ -25,6 +26,10 @@ class RoleHandler
             $client->answerCallbackQuery($this->getCallbackId($ctx), __('bot.already_registered'));
             return;
         }
+
+        // Log role selection
+        $user = $ctx->getOrCreateUser();
+        app(AuditService::class)->log('role_selected', 'registration', $user->id, $user, ['role' => $role]);
 
         // Save to session
         SessionService::startWizard($ctx->telegramUserId, 'registration', 'enter_name', ['role' => $role]);

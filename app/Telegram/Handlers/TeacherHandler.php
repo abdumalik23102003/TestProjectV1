@@ -5,6 +5,7 @@ namespace App\Telegram\Handlers;
 use App\Http\Controllers\TeacherController;
 use App\Models\User;
 use App\Services\SessionService;
+use App\Services\AuditService;
 use App\Telegram\UpdateContext;
 use App\Telegram\TelegramClient;
 
@@ -72,6 +73,9 @@ class TeacherHandler
             'upload',
             'awaiting_file'
         );
+
+        // Log upload start
+        app(AuditService::class)->log('upload_started', 'material', null, $user);
 
         $client->sendMessage(
             $ctx->chatId,
