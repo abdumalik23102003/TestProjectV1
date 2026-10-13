@@ -134,4 +134,15 @@ return [
     'audit_subject_search' => 'Qidiruv',
     'audit_subject_connection' => 'Bog\'lanish',
     'audit_subject_registration' => 'Ro\'yxatdan o\'tish',
+
+    // Admin panel messages
+    'teacher_not_found' => '❌ Ustoz topilmadi.',
+    'user_not_found' => '❌ Foydalanuvchi topilmadi.',
+    'user_already_blocked' => '⚠️ Bu foydalanuvchi allaqachon bloklangan.',
+    'no_blocked_users' => '✅ Bloklangan foydalanuvchilar yo\'q.',
+    'no_audit_logs' => '✅ Audit loglar yo\'q.',
+    'teacher_approved' => '✅ Ustoz tasdiqlandi',
+    'teacher_rejected' => '❌ Ustoz rad etildi',
+    'user_blocked' => '🚫 Foydalanuvchi bloklandi',
+    'user_unblocked' => '✅ Foydalanuvchi blokdan chiqarildi',
 ];
