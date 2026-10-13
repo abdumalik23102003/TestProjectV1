@@ -9,33 +9,51 @@ class StorageService
 {
     protected string $disk = 'private_materials';
 
+
     public function storeTemporaryFile($file, string $originalName): array
     {
         $sanitizedName = $this->sanitizeFilename($originalName);
         $path = 'temp/' . Str::uuid() . '/' . $sanitizedName;
 
-        Storage::disk($this->disk)->put($path, file_get_contents($file));
+        $content = file_get_contents($file);
 
-        $size = Storage::disk($this->disk)->size($path);
-        $mime = Storage::disk($this->disk)->mimeType($path);
-        $checksum = md5_file($file);
+        if ($content === false) {
+            throw new \RuntimeException('Could not read temporary upload file.');
+        }
+
+        $disk = Storage::disk($this->disk);
+
+        if (!$disk->put($path, $content)) {
+            throw new \RuntimeException('Could not save temporary upload file.');
+        }
 
         return [
             'path' => $path,
-            'size' => $size,
-            'mime' => $mime,
-            'checksum' => $checksum,
-            'original_name' => $sanitizedName
+            'size' => strlen($content),
+            'mime' => $disk->mimeType($path),
+            'checksum' => hash('sha256', $content),
+            'original_name' => $sanitizedName,
         ];
     }
 
     public function moveToPermanent(string $tempPath, string $newFileName): string
     {
-        $content = Storage::disk($this->disk)->get($tempPath);
-        $newPath = 'materials/' . Str::uuid() . '/' . $newFileName;
+        $disk = Storage::disk($this->disk);
 
-        Storage::disk($this->disk)->put($newPath, $content);
-        Storage::disk($this->disk)->delete($tempPath);
+        if (!$disk->exists($tempPath)) {
+            throw new \RuntimeException('Temporary file not found.');
+        }
+
+        $safeName = $this->sanitizeFilename($newFileName);
+
+        $datePath = now()->format('Y/m/d');
+        $newPath = 'materials/' . $datePath . '/' . Str::uuid() . '_' . $safeName;
+
+        if (!$disk->copy($tempPath, $newPath)) {
+            throw new \RuntimeException('Could not move file to permanent storage.');
+        }
+
+        $disk->delete($tempPath);
 
         return $newPath;
     }
@@ -51,10 +69,10 @@ class StorageService
     public function generateSignedUrl(string $storagePath, int $expiryMinutes = null): string
     {
         $expiryMinutes = $expiryMinutes ?? config('materials.signed_url_expiry_minutes', 10);
-        
+
         // Storage disk'dan direct URL
         $disk = Storage::disk($this->disk);
-        
+
         if (method_exists($disk, 'temporaryUrl')) {
             return $disk->temporaryUrl($storagePath, now()->addMinutes($expiryMinutes));
         }

@@ -31,8 +31,9 @@ class Router
 
         $parts = explode(':', $ctx->callbackData, 4);
         $pattern = $parts[0] . ':' . ($parts[1] ?? 'index');
-        $handler = $this->routes[$pattern] ?? null;
-
+        $handler = $this->routes[$pattern]
+            ?? $this->routes[explode(':', $pattern)[0] . ':*']
+            ?? null;
         if (!$handler) {
             Log::warning("Router: unknown pattern [{$pattern}]");
             $client->answerCallbackQuery($this->getCallbackId($ctx), __('bot.unknown_action'));

@@ -27,7 +27,10 @@ class TelegramClient
         ];
 
         if ($inlineKeyboard) {
-            $payload['reply_markup'] = json_encode(['inline_keyboard' => $inlineKeyboard]);
+            $payload['reply_markup'] = json_encode(
+                ['inline_keyboard' => $inlineKeyboard],
+                JSON_UNESCAPED_UNICODE
+            );
         }
 
         return $this->request('sendMessage', $payload);

@@ -71,7 +71,7 @@ class StartHandler
         );
     }
 
-    protected function showMenu(UpdateContext $ctx, TelegramClient $client, User $user): void
+    public function showMenu(UpdateContext $ctx, TelegramClient $client, User $user): void
     {
         $text = match ($user->role) {
             'admin' => __('bot.admin_menu'),

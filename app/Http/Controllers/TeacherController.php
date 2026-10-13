@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Category;
+use App\Services\UploadValidator;
 use App\Models\User;
 use App\Models\Material;
 use App\Models\MaterialVersion;
@@ -17,40 +19,73 @@ class TeacherController extends Controller
     protected TelegramService $telegramService;
     protected StorageService $storageService;
     protected PermissionService $permissionService;
+    protected UploadValidator $uploadValidator;
 
     public function __construct(
-        TelegramService $telegramService,
-        StorageService $storageService,
-        PermissionService $permissionService
-    ) {
+        TelegramService   $telegramService,
+        StorageService    $storageService,
+        PermissionService $permissionService,
+        UploadValidator   $uploadValidator
+    )
+    {
         $this->telegramService = $telegramService;
         $this->storageService = $storageService;
         $this->permissionService = $permissionService;
+        $this->uploadValidator = $uploadValidator;
     }
 
     public function uploadFile(User $user, array $fileInfo): void
     {
         if (!$this->permissionService->canUpload($user)) {
-            $this->telegramService->sendMessage($user->telegram_user_id, "❌ Ruxsat yo'q.");
+            $this->telegramService->sendMessage(
+                $user->telegram_user_id,
+                "❌ Yuklash uchun ruxsatingiz yo‘q."
+            );
             return;
         }
 
-        // Telegram'dan fayl yuklash va temporary saqlash
-        $stored = $this->storageService->storeTemporaryFile(
+        $originalName = $fileInfo['filename'] ?? 'document';
+        $validation = $this->uploadValidator->validate(
             $fileInfo['file'],
-            $fileInfo['filename'] ?? 'document'
+            $user,
+            $originalName
         );
 
-        // Metadata wizard boshlash
-        SessionService::startWizard($user->telegram_user_id, 'upload', 'enter_title', [
-            'file_path' => $stored['path'],
-            'file_size' => $stored['size'],
-            'mime_type' => $stored['mime'],
-            'checksum' => $stored['checksum'],
-            'original_name' => $stored['original_name']
-        ]);
+        if (isset($validation['error'])) {
+            $this->telegramService->sendMessage(
+                $user->telegram_user_id,
+                "❌ Fayl qabul qilinmadi: {$validation['error']}"
+            );
+            return;
+        }
 
-        $this->showMetadataForm($user->telegram_user_id);
+        $stored = $this->storageService->storeTemporaryFile(
+            $fileInfo['file'],
+            $originalName
+        );
+
+        // Validator hisoblagan qiymatlarni ishlatamiz.
+        $stored['size'] = $validation['size'];
+        $stored['mime'] = $validation['mime'];
+        $stored['checksum'] = $validation['checksum'];
+
+        SessionService::startWizard(
+            $user->telegram_user_id,
+            'upload',
+            'enter_title',
+            [
+                'file_path' => $stored['path'],
+                'file_size' => $stored['size'],
+                'mime_type' => $stored['mime'],
+                'checksum' => $stored['checksum'],
+                'original_name' => $stored['original_name'],
+            ]
+        );
+
+        $this->askMetadataStep(
+            $user->telegram_user_id,
+            'enter_title'
+        );
     }
 
     private function showMetadataForm(int $telegramUserId): void
@@ -70,24 +105,191 @@ class TeacherController extends Controller
         $this->telegramService->sendMessage($telegramUserId, $text, $buttons);
     }
 
-    public function handleMetadataStep(int $telegramUserId, string $step, string $input): void
+    public function handleUploadText(
+        int    $telegramUserId,
+        string $input
+    ): void
     {
         $session = SessionService::getSession($telegramUserId, 'upload');
 
         if (!$session) {
-            $this->telegramService->sendMessage($telegramUserId, "❌ Sessiya tugadi. Qayta boshlang.");
+            $this->telegramService->sendMessage(
+                $telegramUserId,
+                '❌ Sessiya tugagan. Fayl yuklashni qaytadan boshlang.'
+            );
             return;
         }
 
-        match ($step) {
-            'title' => $session['title'] = trim($input),
-            'description' => $session['description'] = trim($input),
-            'category_id' => $session['category_id'] = (int)$input,
-            'visibility' => $session['visibility'] = strtolower($input) === 'private' ? 'private' : 'public',
-        };
+        $step = $session['current_step'] ?? '';
 
-        SessionService::updateSessionPayload($telegramUserId, 'upload', $session);
-        $this->showConfirmation($telegramUserId, $session);
+        if ($step === 'enter_title') {
+            $session['title'] = trim($input) === '-'
+                ? pathinfo(
+                    $session['original_name'],
+                    PATHINFO_FILENAME
+                )
+                : trim($input);
+
+            SessionService::updateWizard(
+                $telegramUserId,
+                'upload',
+                'enter_description',
+                $session
+            );
+
+            $this->askMetadataStep($telegramUserId, 'enter_description');
+            return;
+        }
+
+        if ($step === 'enter_description') {
+            $session['description'] = trim($input) === '-'
+                ? null
+                : trim($input);
+
+            SessionService::updateWizard(
+                $telegramUserId,
+                'upload',
+                'enter_category',
+                $session
+            );
+
+            $this->askMetadataStep($telegramUserId, 'enter_category');
+            return;
+        }
+
+        if ($step === 'enter_category') {
+            $input = trim($input);
+
+            if ($input === '-') {
+                $session['category_id'] = null;
+            } else {
+                $categories = Category::where('is_active', true)
+                    ->orderBy('sort_order')
+                    ->orderBy('name')
+                    ->get();
+
+                if (
+                    !ctype_digit($input) ||
+                    !$categories->has((int)$input - 1)
+                ) {
+                    $this->askMetadataStep(
+                        $telegramUserId,
+                        'enter_category'
+                    );
+                    return;
+                }
+
+                $category = $categories->values()[(int)$input - 1];
+                $session['category_id'] = $category->id;
+                $session['category_name'] = $category->name;
+            }
+
+            SessionService::updateWizard(
+                $telegramUserId,
+                'upload',
+                'enter_visibility',
+                $session
+            );
+
+            $this->askMetadataStep($telegramUserId, 'enter_visibility');
+            return;
+        }
+
+        if ($step === 'enter_visibility') {
+            $visibility = strtolower(trim($input));
+
+            if (!in_array($visibility, ['public', 'private'], true)) {
+                $this->telegramService->sendMessage(
+                    $telegramUserId,
+                    '❌ Faqat public yoki private deb yozing.'
+                );
+                return;
+            }
+
+            $session['visibility'] = $visibility;
+
+            SessionService::updateWizard(
+                $telegramUserId,
+                'upload',
+                'confirm',
+                $session
+            );
+
+            $this->showConfirmation(
+                $telegramUserId,
+                SessionService::getSession($telegramUserId, 'upload') ?? $session
+            );
+            return;
+        }
+
+        if ($step === 'confirm') {
+            $this->telegramService->sendMessage(
+                $telegramUserId,
+                'Quyidagi tugmalardan birini tanlang: Saqlash, Tahrirlash yoki Bekor qilish.'
+            );
+        }
+    }
+
+    private function askMetadataStep(
+        int    $telegramUserId,
+        string $step
+    ): void
+    {
+        if ($step === 'enter_title') {
+            $text = "📝 Fayl sarlavhasini yuboring.\n";
+            $text .= "Fayl nomidan foydalanish uchun - yuboring.";
+        } elseif ($step === 'enter_description') {
+            $text = "💬 Fayl tavsifini yuboring.\n";
+            $text .= "Tavsif kiritmaslik uchun - yuboring.";
+        } elseif ($step === 'enter_category') {
+            $categories = Category::where('is_active', true)
+                ->orderBy('sort_order')
+                ->orderBy('name')
+                ->get()
+                ->values();
+
+            $text = "🏷 Kategoriya raqamini yuboring:\n\n";
+
+            foreach ($categories as $index => $category) {
+                $text .= ($index + 1) . '. ' . $category->name . "\n";
+            }
+
+            $text .= "\nKategoriyasiz saqlash uchun - yuboring.";
+
+            if ($categories->isEmpty()) {
+                $text = "Faol kategoriyalar yo‘q.\nKategoriyasiz davom etish uchun - yuboring.";
+            }
+        } elseif ($step === 'enter_visibility') {
+            $text = "🔒 Fayl ko‘rinishini tanlang.\n";
+            $text .= "public — barcha tegishli o‘quvchilar topishi mumkin.\n";
+            $text .= "private — faqat ruxsat berilgan foydalanuvchilar.";
+        } else {
+            return;
+        }
+
+        $this->telegramService->sendMessage($telegramUserId, $text);
+    }
+
+    public function editUpload(int $telegramUserId): void
+    {
+        $session = SessionService::getSession($telegramUserId, 'upload');
+
+        if (!$session) {
+            $this->telegramService->sendMessage(
+                $telegramUserId,
+                '❌ Yuklash sessiyasi tugagan.'
+            );
+            return;
+        }
+
+        SessionService::updateWizard(
+            $telegramUserId,
+            'upload',
+            'enter_title',
+            $session
+        );
+
+        $this->askMetadataStep($telegramUserId, 'enter_title');
     }
 
     private function showConfirmation(int $telegramUserId, array $session): void
@@ -96,7 +298,7 @@ class TeacherController extends Controller
         $text .= "📄 Fayl: " . $session['original_name'] . "\n";
         $text .= "📝 Sarlavha: " . ($session['title'] ?? '(standart nom)') . "\n";
         $text .= "💬 Tavsif: " . ($session['description'] ?? '(bo\'sh)') . "\n";
-        $text .= "🏷 Kategoriya: " . ($session['category_id'] ?? 'Tanlanmagan') . "\n";
+        $text .= "🏷 Kategoriya: " . ($session['category_name'] ?? 'Tanlanmagan') . "\n";
         $text .= "🔒 Ko'rinish: " . ($session['visibility'] ?? 'public') . "\n\n";
 
         if (($session['visibility'] ?? 'public') === 'public') {
@@ -122,6 +324,14 @@ class TeacherController extends Controller
             return;
         }
 
+        if (($session['current_step'] ?? '') !== 'confirm') {
+            $this->telegramService->sendMessage(
+                $telegramUserId,
+                '❌ Avval metadata bosqichlarini yakunlang.'
+            );
+            return;
+        }
+
         // Vaqtinchalik faylni permanent joyga ko'chirish
         $permanentPath = $this->storageService->moveToPermanent(
             $session['file_path'],
@@ -137,7 +347,7 @@ class TeacherController extends Controller
             'category_id' => $session['category_id'] ?? null,
             'visibility' => $session['visibility'] ?? 'public',
             'status' => 'active',
-            'storage_disk' => config('filesystems.disks.private_materials.driver', 'private_materials'),
+            'storage_disk' => 'private_materials',
             'storage_path' => $permanentPath,
             'size_bytes' => $session['file_size'],
             'mime_type' => $session['mime_type'],

@@ -4,38 +4,58 @@ namespace App\Services;
 
 use App\Models\Material;
 use App\Models\User;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 
 class SearchService
 {
-    public function search(User $user, string $query): \Illuminate\Pagination\Paginator
-    {
-        $baseQuery = Material::where('status', 'active');
+    public function search(
+        User $user,
+        string $query,
+        int $page = 1
+    ): LengthAwarePaginator {
+        $query = trim($query);
 
-        // Public materials
-        $public = $baseQuery->clone()
-            ->where('visibility', 'public')
-            ->where('title', 'like', "%{$query}%")
-            ->orWhere('description', 'like', "%{$query}%")
-            ->get();
+        return Material::query()
+            ->where('status', 'active')
+            ->where(function ($materials) use ($user, $query) {
+                // Public materials
+                $materials->where(function ($public) use ($query) {
+                    $public->where('visibility', 'public')
+                        ->where(function ($match) use ($query) {
+                            $match->where('title', 'like', "%{$query}%")
+                                ->orWhere(
+                                    'description',
+                                    'like',
+                                    "%{$query}%"
+                                );
+                        });
+                })
 
-        // Private materials (only from active connections)
-        $private = $baseQuery->clone()
-            ->where('visibility', 'private')
-            ->whereHas('teacher', function ($q) use ($user) {
-                $q->whereHas('studentConnections', function ($sq) use ($user) {
-                    $sq->where('student_id', $user->id)->where('status', 'active');
-                });
+                    // Private materials: only from connected teachers
+                    ->orWhere(function ($private) use ($user, $query) {
+                        $private->where('visibility', 'private')
+                            ->whereHas('teacher', function ($teacher) use ($user) {
+                                $teacher->whereHas(
+                                    'studentConnections',
+                                    function ($connection) use ($user) {
+                                        $connection
+                                            ->where('student_id', $user->id)
+                                            ->where('status', 'active');
+                                    }
+                                );
+                            })
+                            ->where(function ($match) use ($query) {
+                                $match->where('title', 'like', "%{$query}%")
+                                    ->orWhere(
+                                        'description',
+                                        'like',
+                                        "%{$query}%"
+                                    );
+                            });
+                    });
             })
-            ->where('title', 'like', "%{$query}%")
-            ->orWhere('description', 'like', "%{$query}%")
-            ->get();
-
-        $results = $public->merge($private);
-
-        return new \Illuminate\Pagination\Paginator(
-            $results,
-            5,
-            1
-        );
+            ->with('teacher')
+            ->orderByDesc('id')
+            ->paginate(5, ['*'], 'page', max(1, $page));
     }
 }

@@ -6,15 +6,16 @@ use App\Models\User;
 
 class UpdateContext
 {
-    public int $updateId;
-    public int $chatId;
-    public int $telegramUserId;
-    public ?string $messageText;
-    public ?string $callbackData;
-    public ?string $fileId;
-    public ?string $fileType; // 'document', 'photo', 'audio', 'video'
-    public ?User $user;
-    public array $rawUpdate;
+
+    public int $updateId = 0;
+    public int $chatId = 0;
+    public int $telegramUserId = 0;
+    public ?string $messageText = null;
+    public ?string $callbackData = null;
+    public ?string $fileId = null;
+    public ?string $fileType = null;
+    public ?User $user = null;
+    public array $rawUpdate = [];
 
     public function __construct(array $update)
     {

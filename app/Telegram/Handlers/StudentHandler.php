@@ -4,7 +4,7 @@ namespace App\Telegram\Handlers;
 
 use App\Telegram\UpdateContext;
 use App\Telegram\TelegramClient;
-use App\Telegram\Keyboard;
+use App\Services\SessionService;
 
 class StudentHandler
 {
@@ -23,7 +23,16 @@ class StudentHandler
 
     protected function search(UpdateContext $ctx, TelegramClient $client): void
     {
-        $client->sendMessage($ctx->chatId, __('bot.search_prompt'));
+        SessionService::startWizard(
+            $ctx->telegramUserId,
+            'search',
+            'enter_query'
+        );
+
+        $client->sendMessage(
+            $ctx->chatId,
+            __('bot.search_prompt')
+        );
     }
 
     protected function listTeachers(UpdateContext $ctx, TelegramClient $client): void

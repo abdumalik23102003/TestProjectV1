@@ -40,7 +40,7 @@ return [
     'invalid_name' => "❌ Ism 2-100 belgida bo'lishi kerak. Qayta kiriting:",
     'waiting_approval' => "✅ Tashdiqlanish kutilmoqda.\n\nAdmin sizni tasdiqlagandan keyin xabar olasiz.",
     'registration_complete' => "✅ Ro'yxatdan o'tish yakunlandi!\n\nMenuni bosing:",
-    'help_text' => "Kutubxona boti - ta'lim materiallarini saqlash va qidirish.\n\n👨‍🏫 Ustozlar: Fayllarni yuklash, versiyalash, o'quvchilarni boshqarish\n🎓 O'quvchilar: Fayllarni qidiruv qilish, yuklab olish\n⚙️ Admin: Ustozlarni tasdiqlaش, kategoriyalar, audit",
+    'help_text' => "Kutubxona boti - ta'lim materiallarini saqlash va qidirish.\n\n👨‍🏫 Ustozlar: Fayllarni yuklash, versiyalash, o'quvchilarni boshqarish\n🎓 O'quvchilar: Fayllarni qidiruv qilish, yuklab olish\n⚙️ Admin: Ustozlarni tasdiqlash, kategoriyalar, audit",
     'already_registered' => "Siz allaqachon ro'yxatdan o'tgansiz.",
     'blocked_user' => "❌ Sizni bloklashdi. Batafsil uchun administratorga murojaat qiling.",
     'pending_teacher' => "⏳ Siz ustoz sifatida tasdiqlanishni kutmoqdasiz. Tugashgach xabar olasiz.",
@@ -78,14 +78,14 @@ return [
 
     // Admin flow
     'admin_menu' => "⚙️ Admin menyusi:",
-    'pending_teachers' => "⏳ Tasdiqqa kutayotgan ustozlar (%s ta):\n\n%s",
+    'pending_teachers' => "⏳ Tasdiqqa kutayotgan ustozlar (:count ta):\n\n:teachers",
     'no_pending' => "✅ Tasdiqqa kutayotgan ustoz yo'q.",
     'teacher_approved' => "✅ Ustoz tasdiqlandi!",
     'teacher_rejected' => "❌ Ustoz rad etildi!",
     'join_link_sent' => "🔗 Taklif havolasi ustozga yuborildi:\n\nhttps://t.me/%s?start=join_%s",
     'user_blocked' => "🚫 Foydalanuvchi bloklandi.",
     'user_unblocked' => "✅ Foydalanuvchi blokdan chiqarildi.",
-    'audit_log' => "🧾 Audit jurnali:\n\n%s",
+    'audit_log' => "🧾 Audit jurnali:\n\n:logs",
 
     // Errors
     'invalid_file_type' => "❌ Faylning turi qo'llab-quvvatlanmaydi. Ruxsat etilganlar: %s",
