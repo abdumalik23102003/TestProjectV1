@@ -29,7 +29,7 @@ class Keyboard
     /**
      * Button (helper)
      */
-    public static function button(string $text, string $data = null, string $url = null): array
+    public static function button(string $text, ?string $data = null, ?string $url = null): array
     {
         $btn = ['text' => $text];
 

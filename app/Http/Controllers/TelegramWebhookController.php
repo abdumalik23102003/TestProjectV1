@@ -2,11 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Telegram\Handlers\AdminHandler;
-use App\Telegram\Handlers\HelpHandler;
-use App\Telegram\Handlers\RoleHandler;
-use App\Telegram\Handlers\StudentHandler;
-use App\Telegram\Handlers\TeacherHandler;
+use App\Telegram\Handlers\MenuHandler;
+use App\Telegram\Menus;
 use App\Telegram\Keyboard;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -305,11 +302,14 @@ class TelegramWebhookController extends Controller
         if ($ctx->isCallback()) {
             $router = new Router();
             $router->register('role:*', RoleHandler::class);
+            $router->register('menu:*', MenuHandler::class);
             $router->register('teacher:*', TeacherHandler::class);
             $router->register('upload:*', TeacherHandler::class);
             $router->register('student:*', StudentHandler::class);
             $router->register('admin:*', AdminHandler::class);
             $router->register('help:*', HelpHandler::class);
+            $router->register('confirm:*', MenuHandler::class);
+            $router->register('approve:*', MenuHandler::class);
 
             $router->route($ctx, $client);
             return;
@@ -364,7 +364,8 @@ class TelegramWebhookController extends Controller
         SessionService::clearSession($ctx->telegramUserId, 'registration');
 
         if ($isAdmin) {
-            $client->sendMessage($ctx->chatId, __('bot.admin_menu'), $this->adminMenuButtons());
+            $menu = Menus::adminMain();
+            $client->sendMessage($ctx->chatId, $menu['text'], $menu['buttons']);
         } elseif ($role === 'teacher') {
             $client->sendMessage($ctx->chatId, __('bot.waiting_approval'));
             // Notify admins
@@ -378,11 +379,8 @@ class TelegramWebhookController extends Controller
 
     protected function adminMenuButtons(): array
     {
-        return [
-            [Keyboard::button(__('bot.btn_approve_teachers'), 'admin:approve_teachers')],
-            [Keyboard::button(__('bot.btn_users'), 'admin:users')],
-            [Keyboard::button(__('bot.btn_audit'), 'admin:audit')],
-        ];
+        // Deprecated - use Menus::adminMain() instead
+        return Menus::adminMain()['buttons'];
     }
 
     protected function notifyAdmins(TelegramClient $client, string $message): void

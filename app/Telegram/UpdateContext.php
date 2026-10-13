@@ -10,6 +10,7 @@ class UpdateContext
     public int $updateId = 0;
     public int $chatId = 0;
     public int $telegramUserId = 0;
+    public int $messageId = 0;
     public ?string $messageText = null;
     public ?string $callbackData = null;
     public ?string $fileId = null;
@@ -25,6 +26,7 @@ class UpdateContext
         // Extract info
         if (isset($update['message'])) {
             $msg = $update['message'];
+            $this->messageId = $msg['message_id'] ?? 0;
             $this->chatId = $msg['chat']['id'] ?? 0;
             $this->telegramUserId = $msg['from']['id'] ?? 0;
             $this->messageText = $msg['text'] ?? null;
@@ -45,6 +47,7 @@ class UpdateContext
             }
         } elseif (isset($update['callback_query'])) {
             $cbq = $update['callback_query'];
+            $this->messageId = $cbq['message']['message_id'] ?? 0;
             $this->chatId = $cbq['message']['chat']['id'] ?? 0;
             $this->telegramUserId = $cbq['from']['id'] ?? 0;
             $this->callbackData = $cbq['data'] ?? null;

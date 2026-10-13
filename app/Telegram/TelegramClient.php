@@ -68,6 +68,25 @@ class TelegramClient
     }
 
     /**
+     * Edit message text and keyboard
+     */
+    public function editMessageText(int $chatId, int $messageId, string $text, array $inlineKeyboard = null): array
+    {
+        $payload = [
+            'chat_id' => $chatId,
+            'message_id' => $messageId,
+            'text' => $text,
+            'parse_mode' => 'HTML',
+        ];
+
+        if ($inlineKeyboard) {
+            $payload['reply_markup'] = json_encode(['inline_keyboard' => $inlineKeyboard]);
+        }
+
+        return $this->request('editMessageText', $payload);
+    }
+
+    /**
      * Answer callback query
      */
     public function answerCallbackQuery(string $callbackQueryId, string $text = '', bool $showAlert = false): array
