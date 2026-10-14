@@ -146,3 +146,27 @@ return [
     'user_blocked' => '🚫 Foydalanuvchi bloklandi',
     'user_unblocked' => '✅ Foydalanuvchi blokdan chiqarildi',
 ];
+
+    // Connection messages
+    'no_connections' => '🎓 Bog\'lanishlar yo\'q.',
+    'teacher_no_students' => '🎓 Hozircha o\'quvchilar yo\'q.',
+    'invite_link' => '🔗 Taklif havolasi:',
+    'copy_link' => 'Havolani nusxalang va o\'quvchiga yuboring:',
+    'no_pending_requests' => '✅ Kutilayotgan so\'rovlar yo\'q.',
+    'pending_requests' => '⏳ Kutilayotgan so\'rovlar (:count ta)',
+    'students_connected' => '✅ O\'quvchi bog\'landi',
+    'student_removed' => '🗑 O\'quvchi udalindi',
+    'student_approved' => '✅ O\'quvchi tasdiqlandi',
+
+    // Connection messages
+    'no_connections' => '🎓 Bog\'lanishlar yo\'q.',
+    'teacher_no_students' => '🎓 Hozircha o\'quvchilar yo\'q.',
+    'invite_link' => '🔗 Taklif havolasi:',
+    'copy_link' => 'Havolani nusxalang va o\'quvchiga yuboring:',
+    'no_pending_requests' => '✅ Kutilayotgan so\'rovlar yo\'q.',
+    'pending_requests' => '⏳ Kutilayotgan so\'rovlar (:count ta)',
+    'students_connected' => '✅ O\'quvchi bog\'landi',
+    'student_removed' => '🗑 O\'quvchi udalindi',
+    'student_approved' => '✅ O\'quvchi tasdiqlandi',
+    'student_rejected' => '❌ O\'quvchi rad etildi',
+];
