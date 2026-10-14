@@ -13,8 +13,8 @@ class StorageService
     public function storeTemporaryFile($file, string $originalName): array
     {
         $sanitizedName = $this->sanitizeFilename($originalName);
-        $path = 'temp/' . Str::uuid() . '/' . $sanitizedName;
-
+        $datePath = now()->format('Y/m/d');
+        $path = $datePath . '/pending_' . Str::uuid() . '_' . $sanitizedName;
         $content = file_get_contents($file);
 
         if ($content === false) {
@@ -47,7 +47,7 @@ class StorageService
         $safeName = $this->sanitizeFilename($newFileName);
 
         $datePath = now()->format('Y/m/d');
-        $newPath = 'materials/' . $datePath . '/' . Str::uuid() . '_' . $safeName;
+        $newPath = $datePath . '/' . Str::uuid() . '_' . $safeName;
 
         if (!$disk->copy($tempPath, $newPath)) {
             throw new \RuntimeException('Could not move file to permanent storage.');

@@ -3,58 +3,68 @@
 namespace App\Http\Controllers;
 
 use App\Telegram\Handlers\MenuHandler;
+use App\Telegram\Handlers\StartHandler;
+use App\Telegram\Handlers\HelpHandler;
+use App\Telegram\Handlers\RoleHandler;
+use App\Telegram\Handlers\TeacherHandler;
+use App\Telegram\Handlers\StudentHandler;
+use App\Telegram\Handlers\AdminHandler;
 use App\Telegram\Menus;
 use App\Telegram\Keyboard;
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Log;
 use App\Telegram\UpdateContext;
 use App\Telegram\TelegramClient;
 use App\Telegram\Router;
-use App\Telegram\Handlers\StartHandler;
 use App\Helpers\HtmlHelper;
 use App\Helpers\StringHelper;
 use App\Services\SessionService;
-use App\Services\SearchService;
 use App\Services\AuditService;
 use App\Models\User;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 class TelegramWebhookController extends Controller
 {
-    public function handleWebhook(Request $request): \Illuminate\Http\Response
+    public function handleWebhook(Request $request): Response
     {
         $update = $request->json()->all();
 
         if (empty($update)) {
             Log::warning('Empty webhook update');
+
             return response('', 200);
         }
 
         $updateId = $update['update_id'] ?? null;
 
-        if (!$updateId) {
+        if ($updateId === null) {
             return response('', 200);
         }
 
-        // Deduplication: skip if already processed
         $cacheKey = "telegram_update_{$updateId}";
+
         if (Cache::has($cacheKey)) {
             Log::info("Webhook: duplicate update_id [{$updateId}]");
+
             return response('', 200);
         }
 
-        Cache::put($cacheKey, true, now()->addDay()); // Keep 1 day
+        Cache::put($cacheKey, true, now()->addDay());
 
         try {
-            // Create context
             $ctx = new UpdateContext($update);
 
-            // Process
             $this->process($ctx);
-        } catch (\Exception $e) {
-            Log::error('Webhook processing error: ' . $e->getMessage());
+        } catch (Throwable $e) {
+            Log::error('Webhook processing error', [
+                'update_id' => $updateId,
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
         }
 
         return response('', 200);
@@ -65,46 +75,77 @@ class TelegramWebhookController extends Controller
         $client = new TelegramClient();
 
         // Handle /start command
-        if ($ctx->messageText && str_starts_with($ctx->messageText, '/start')) {
-            $param = trim(str_replace('/start', '', $ctx->messageText));
+        if (
+            $ctx->messageText !== null &&
+            str_starts_with($ctx->messageText, '/start')
+        ) {
+            $param = trim(
+                str_replace('/start', '', $ctx->messageText)
+            );
+
             $handler = new StartHandler();
-            $handler->handle($ctx, $client, ['start', $ctx->telegramUserId, $param]);
+
+            $handler->handle(
+                $ctx,
+                $client,
+                ['start', $ctx->telegramUserId, $param]
+            );
+
             return;
         }
 
-        // Handle /help
+        // Handle /help command
         if ($ctx->messageText === '/help') {
-            $client->sendMessage($ctx->chatId, __('bot.help_text'));
+            $client->sendMessage(
+                $ctx->chatId,
+                __('bot.help_text')
+            );
+
             return;
         }
 
-        // Handle registration input (user sending name)
-        $session = SessionService::getSession($ctx->telegramUserId, 'registration');
+        // Handle registration input
+        $session = SessionService::getSession(
+            $ctx->telegramUserId,
+            'registration'
+        );
+
         Log::info('Registration session check', [
             'telegram_user_id' => $ctx->telegramUserId,
             'message_text' => $ctx->messageText,
             'session' => $session,
         ]);
-        if ($session && ($session['current_step'] ?? null) === 'enter_name') {
-            $this->handleRegistrationName($ctx, $client, $ctx->messageText);
+
+        if (
+            $session &&
+            ($session['current_step'] ?? null) === 'enter_name'
+        ) {
+            $this->handleRegistrationName(
+                $ctx,
+                $client,
+                $ctx->messageText
+            );
+
             return;
         }
 
-
         // Handle incoming files for teacher uploads
         if ($ctx->isFile()) {
-            $client = new TelegramClient();
-
             $user = User::where(
                 'telegram_user_id',
                 $ctx->telegramUserId
             )->first();
 
-            if (!$user || $user->role !== 'teacher' || $user->status !== 'active') {
+            if (
+                !$user ||
+                $user->role !== 'teacher' ||
+                $user->status !== 'active'
+            ) {
                 $client->sendMessage(
                     $ctx->chatId,
                     '❌ Fayl yuborish uchun tasdiqlangan ustoz bo‘lishingiz kerak.'
                 );
+
                 return;
             }
 
@@ -113,11 +154,15 @@ class TelegramWebhookController extends Controller
                 'upload'
             );
 
-            if (!$session || ($session['current_step'] ?? '') !== 'awaiting_file') {
+            if (
+                !$session ||
+                ($session['current_step'] ?? '') !== 'awaiting_file'
+            ) {
                 $client->sendMessage(
                     $ctx->chatId,
                     '❌ Yangi fayl yuklash uchun avval 📤 Fayl yuklash tugmasini bosing. Metadata kiritayotgan bo‘lsangiz, avval uni yakunlang yoki bekor qiling.'
                 );
+
                 return;
             }
 
@@ -128,6 +173,7 @@ class TelegramWebhookController extends Controller
                     $ctx->chatId,
                     '❌ Telegram fayl ma’lumotlarini olishda xatolik yuz berdi.'
                 );
+
                 return;
             }
 
@@ -138,6 +184,7 @@ class TelegramWebhookController extends Controller
                     $ctx->chatId,
                     '❌ Fayl manzili topilmadi.'
                 );
+
                 return;
             }
 
@@ -148,12 +195,19 @@ class TelegramWebhookController extends Controller
                     $ctx->chatId,
                     '❌ Faylni yuklab olib bo‘lmadi. Qayta urinib ko‘ring.'
                 );
+
                 return;
             }
 
-            $tempPath = tempnam(sys_get_temp_dir(), 'telegram_upload_');
+            $tempPath = tempnam(
+                sys_get_temp_dir(),
+                'telegram_upload_'
+            );
 
-            if ($tempPath === false || file_put_contents($tempPath, $content) === false) {
+            if (
+                $tempPath === false ||
+                file_put_contents($tempPath, $content) === false
+            ) {
                 $client->sendMessage(
                     $ctx->chatId,
                     '❌ Vaqtinchalik faylni yaratib bo‘lmadi.'
@@ -167,18 +221,22 @@ class TelegramWebhookController extends Controller
             }
 
             try {
-                $filename = $ctx->rawUpdate['message']['document']['file_name']
+                $filename =
+                    $ctx->rawUpdate['message']['document']['file_name']
                     ?? basename($filePath);
 
-                app(TeacherController::class)
-                    ->uploadFile($user, [
+                app(TeacherController::class)->uploadFile(
+                    $user,
+                    [
                         'file' => $tempPath,
                         'filename' => $filename,
-                    ]);
-            } catch (Throwable $e) {
-                Log::error(
-                    'Teacher file upload failed: ' . $e->getMessage()
+                    ]
                 );
+            } catch (Throwable $e) {
+                Log::error('Teacher file upload failed', [
+                    'telegram_user_id' => $ctx->telegramUserId,
+                    'error' => $e->getMessage(),
+                ]);
 
                 $client->sendMessage(
                     $ctx->chatId,
@@ -190,7 +248,8 @@ class TelegramWebhookController extends Controller
 
             return;
         }
-// Handle teacher upload metadata text
+
+        // Handle teacher upload metadata text
         if ($ctx->messageText !== null) {
             $uploadSession = SessionService::getSession(
                 $ctx->telegramUserId,
@@ -232,6 +291,7 @@ class TelegramWebhookController extends Controller
                         $ctx->chatId,
                         '❌ Faol ustoz akkaunti talab qilinadi.'
                     );
+
                     return;
                 }
 
@@ -243,7 +303,8 @@ class TelegramWebhookController extends Controller
                 return;
             }
         }
-// Handle material search input
+
+        // Handle material search input
         $searchSession = SessionService::getSession(
             $ctx->telegramUserId,
             'search'
@@ -261,6 +322,7 @@ class TelegramWebhookController extends Controller
                     $ctx->chatId,
                     __('bot.search_prompt')
                 );
+
                 return;
             }
 
@@ -274,12 +336,15 @@ class TelegramWebhookController extends Controller
                     $ctx->chatId,
                     __('bot.unknown_action')
                 );
+
                 return;
             }
 
             try {
-                app(\App\Http\Controllers\StudentController::class)
-                    ->search($ctx->user, $query);
+                app(StudentController::class)->search(
+                    $ctx->user,
+                    $query
+                );
 
                 SessionService::clearSession(
                     $ctx->telegramUserId,
@@ -299,9 +364,11 @@ class TelegramWebhookController extends Controller
 
             return;
         }
-        // Handle callback
+
+        // Handle callback buttons
         if ($ctx->isCallback()) {
             $router = new Router();
+
             $router->register('role:*', RoleHandler::class);
             $router->register('menu:*', MenuHandler::class);
             $router->register('teacher:*', TeacherHandler::class);
@@ -313,6 +380,7 @@ class TelegramWebhookController extends Controller
             $router->register('approve:*', MenuHandler::class);
 
             $router->route($ctx, $client);
+
             return;
         }
 
@@ -326,82 +394,140 @@ class TelegramWebhookController extends Controller
         ]);
     }
 
-    protected function handleRegistrationName(UpdateContext $ctx, TelegramClient $client, ?string $name): void
-    {
+    protected function handleRegistrationName(
+        UpdateContext $ctx,
+        TelegramClient $client,
+        ?string $name
+    ): void {
         $name = trim($name ?? '');
 
         if (strlen($name) < 2 || strlen($name) > 100) {
-            $client->sendMessage($ctx->chatId, __('bot.invalid_name'));
+            $client->sendMessage(
+                $ctx->chatId,
+                __('bot.invalid_name')
+            );
+
             return;
         }
 
-        // Escape HTML
         $name = HtmlHelper::escape($name);
 
-        // Get user or create
         $user = $ctx->getOrCreateUser();
 
-        // Get role from session
-        $session = SessionService::getSession($ctx->telegramUserId, 'registration');
+        $session = SessionService::getSession(
+            $ctx->telegramUserId,
+            'registration'
+        );
 
         $role = $session['role'] ?? 'student';
 
-        // Check if user is admin
-        $adminIds = array_filter(array_map('intval', explode(',', config('telegram.admin_telegram_ids', ''))));
-        $isAdmin = in_array($ctx->telegramUserId, $adminIds);
+        $adminIds = array_filter(
+            array_map(
+                'intval',
+                explode(',', config('telegram.admin_telegram_ids', ''))
+            )
+        );
 
-        // Update user
+        $isAdmin = in_array(
+            $ctx->telegramUserId,
+            $adminIds
+        );
+
         $user->update([
             'full_name' => $name,
             'role' => $isAdmin ? 'admin' : $role,
-            'status' => ($isAdmin || $role === 'student') ? 'active' : 'pending',
+            'status' => (
+                $isAdmin || $role === 'student'
+            ) ? 'active' : 'pending',
         ]);
 
         if ($role === 'teacher' && !$isAdmin) {
-            $user->teacher_approval_token = StringHelper::randomToken();
+            $user->teacher_approval_token =
+                StringHelper::randomToken();
+
             $user->save();
         }
 
-        SessionService::clearSession($ctx->telegramUserId, 'registration');
+        SessionService::clearSession(
+            $ctx->telegramUserId,
+            'registration'
+        );
 
-        // Log registration
-        app(AuditService::class)->logRegistration($user, $isAdmin ? 'admin' : $role);
+        app(AuditService::class)->logRegistration(
+            $user,
+            $isAdmin ? 'admin' : $role
+        );
 
         if ($isAdmin) {
             $menu = Menus::adminMain();
-            $client->sendMessage($ctx->chatId, $menu['text'], $menu['buttons']);
+
+            $client->sendMessage(
+                $ctx->chatId,
+                $menu['text'],
+                $menu['buttons']
+            );
         } elseif ($role === 'teacher') {
-            $client->sendMessage($ctx->chatId, __('bot.waiting_approval'));
-            // Notify admins
-            $this->notifyAdmins($client, "🆕 Yangi ustoz: <b>{$name}</b>");
+            $client->sendMessage(
+                $ctx->chatId,
+                __('bot.waiting_approval')
+            );
+
+            $this->notifyAdmins(
+                $client,
+                "🆕 Yangi ustoz: <b>{$name}</b>"
+            );
         } else {
-            $client->sendMessage($ctx->chatId, __('bot.registration_complete'));
-            // Show student menu
-            app(StartHandler::class)->showMenu($ctx, $client, $user);
+            $client->sendMessage(
+                $ctx->chatId,
+                __('bot.registration_complete')
+            );
+
+            app(StartHandler::class)->showMenu(
+                $ctx,
+                $client,
+                $user
+            );
         }
     }
 
     protected function adminMenuButtons(): array
     {
-        // Deprecated - use Menus::adminMain() instead
         return Menus::adminMain()['buttons'];
     }
 
-    protected function notifyAdmins(TelegramClient $client, string $message): void
-    {
-        $adminIds = array_filter(array_map('intval', explode(',', config('telegram.admin_telegram_ids', ''))));
+    protected function notifyAdmins(
+        TelegramClient $client,
+        string $message
+    ): void {
+        $adminIds = array_filter(
+            array_map(
+                'intval',
+                explode(',', config('telegram.admin_telegram_ids', ''))
+            )
+        );
 
         foreach ($adminIds as $adminId) {
-            $kb = [
-                [Keyboard::button(__('bot.btn_approve_teachers'), 'admin:approve_teachers')]
+            $keyboard = [
+                [
+                    Keyboard::button(
+                        __('bot.btn_approve_teachers'),
+                        'admin:approve_teachers'
+                    ),
+                ],
             ];
-            $client->sendMessage($adminId, $message, $kb);
+
+            $client->sendMessage(
+                $adminId,
+                $message,
+                $keyboard
+            );
         }
     }
 
     public function setWebhook(): JsonResponse
     {
         $client = new TelegramClient();
+
         $url = config('telegram.webhook_url');
         $secret = config('telegram.webhook_secret');
 
@@ -413,6 +539,7 @@ class TelegramWebhookController extends Controller
     public function getWebhookInfo(): JsonResponse
     {
         $client = new TelegramClient();
+
         $result = $client->getWebhookInfo();
 
         return response()->json($result);

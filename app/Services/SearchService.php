@@ -16,7 +16,7 @@ class SearchService
         $query = trim($query);
 
         return Material::query()
-            ->where('status', 'active')
+            ->where('materials.status', 'active')
             ->where(function ($materials) use ($user, $query) {
                 // Public materials
                 $materials->where(function ($public) use ($query) {
@@ -39,8 +39,8 @@ class SearchService
                                     'studentConnections',
                                     function ($connection) use ($user) {
                                         $connection
-                                            ->where('student_id', $user->id)
-                                            ->where('status', 'active');
+                                            ->where('teacher_students.student_id', $user->id)
+                                            ->where('teacher_students.status', 'active');
                                     }
                                 );
                             })

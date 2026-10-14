@@ -145,7 +145,7 @@ return [
     'teacher_rejected' => '❌ Ustoz rad etildi',
     'user_blocked' => '🚫 Foydalanuvchi bloklandi',
     'user_unblocked' => '✅ Foydalanuvchi blokdan chiqarildi',
-];
+//];
 
     // Connection messages
     'no_connections' => '🎓 Bog\'lanishlar yo\'q.',

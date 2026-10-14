@@ -185,7 +185,7 @@ class AdminHandler
             [Keyboard::button(__('bot.btn_back'), 'menu:main')],
         ];
 
-        $client->sendMessage($ctx->chatId, $text, $buttons);
+        $client->editMessageText($ctx->chatId, $ctx->messageId, $text, $buttons);
     }
 
     protected function listActiveUsers(UpdateContext $ctx, TelegramClient $client): void
@@ -194,7 +194,11 @@ class AdminHandler
         $users = $adminService->getActiveUsers(15);
 
         if ($users->isEmpty()) {
-            $client->sendMessage($ctx->chatId, __('bot.no_results'));
+            $client->editMessageText(
+                $ctx->chatId,
+                $ctx->messageId,
+                __('bot.no_results')
+            );
             return;
         }
 
@@ -205,7 +209,7 @@ class AdminHandler
             [Keyboard::button(__('bot.btn_back'), 'admin:users')],
         ];
 
-        $client->sendMessage($ctx->chatId, $text, $buttons);
+        $client->editMessageText($ctx->chatId, $ctx->messageId, $text, $buttons);
     }
 
     protected function listBlockedUsers(UpdateContext $ctx, TelegramClient $client): void
@@ -354,7 +358,11 @@ class AdminHandler
         $logs = app(AuditService::class)->getLatest(10);
 
         if ($logs->isEmpty()) {
-            $client->sendMessage($ctx->chatId, "💻 " . __('bot.no_audit_logs'));
+            $client->editMessageText(
+                $ctx->chatId,
+                $ctx->messageId,
+                "💻 " . __('bot.no_audit_logs')
+            );
             return;
         }
 
@@ -368,7 +376,7 @@ class AdminHandler
             [Keyboard::button(__('bot.btn_back'), 'menu:main')],
         ];
 
-        $client->sendMessage($ctx->chatId, $text, $buttons);
+        $client->editMessageText($ctx->chatId, $ctx->messageId, $text, $buttons);
     }
 
     protected function showStatistics(UpdateContext $ctx, TelegramClient $client): void

@@ -67,10 +67,10 @@ class ProcessTelegramUpdate implements ShouldQueue
 
         // Aktiv session tekshirish
         $session = SessionService::getSession($userId, 'upload');
-        
+
         if ($session) {
             $currentStep = $session['current_step'] ?? 'enter_title';
-            
+
             match ($currentStep) {
                 'enter_title' => app(TeacherController::class)->handleMetadataStep($userId, 'title', $text),
                 'enter_description' => app(TeacherController::class)->handleMetadataStep($userId, 'description', $text),
@@ -78,7 +78,7 @@ class ProcessTelegramUpdate implements ShouldQueue
                 'enter_visibility' => app(TeacherController::class)->handleMetadataStep($userId, 'visibility', $text),
                 default => null
             };
-            
+
             return;
         }
 
@@ -111,29 +111,79 @@ class ProcessTelegramUpdate implements ShouldQueue
         $param1 = $parts[1] ?? null;
         $param2 = $parts[2] ?? null;
 
-        match ($action) {
-            'role' => app(AuthController::class)->handleRoleSelection($userId, $param1),
-            
-            'teacher:upload' => app(TeacherController::class)->uploadFile($user, []),
-            'teacher:materials' => app(TeacherController::class)->listMaterials($user),
-            
-            'student:search' => app(StudentController::class)->search($user, ''),
-            'student:teachers' => app(StudentController::class)->listTeachers($user),
-            
-            'download' => app(StudentController::class)->download($user, (int)$param1),
-            
-            'upload:save' => app(TeacherController::class)->confirmUpload($userId),
-            'upload:cancel' => app(TeacherController::class)->cancelWizard($userId),
-            
-            'approve_teacher' => app(AdminController::class)->approveTeacher($user, (int)$param1),
-            'reject_teacher' => app(AdminController::class)->rejectTeacher($user, (int)$param1),
-            'admin:approve_teachers' => app(AdminController::class)->approvePendingTeachers($user),
-            'admin:audit' => app(AdminController::class)->viewAuditLog($user),
-            
-            'admin_preview' => app(AdminController::class)->previewMaterial($user, (int)$param1),
-            
-            default => $this->telegramService->answerCallbackQuery($callbackId, "Noma'lum amal", false)
-        };
+        switch ($action) {
+            case 'role':
+                app(AuthController::class)->handleRoleSelection($userId, $param1);
+                break;
+
+            case 'teacher':
+                $controller = app(TeacherController::class);
+
+                switch ($param1) {
+                    case 'upload':
+                        $controller->uploadFile($user, []);
+                        break;
+
+                    case 'materials':
+                        $controller->listMaterials($user);
+                        break;
+                }
+                break;
+
+            case 'student':
+                $controller = app(StudentController::class);
+
+                switch ($param1) {
+                    case 'search':
+                        $controller->search($user, '');
+                        break;
+
+                    case 'teachers':
+                        $controller->listTeachers($user);
+                        break;
+                }
+                break;
+
+            case 'download':
+                app(StudentController::class)->download($user, (int) $param1);
+                break;
+
+            case 'upload':
+                $controller = app(TeacherController::class);
+
+                switch ($param1) {
+                    case 'save':
+                        $controller->confirmUpload($userId);
+                        break;
+
+                    case 'cancel':
+                        $controller->cancelWizard($userId);
+                        break;
+
+                    case 'edit':
+                    case 'back':
+                        $controller->editUpload($userId);
+                        break;
+
+                    default:
+                        $this->telegramService->answerCallbackQuery(
+                            $callbackId,
+                            "Noma'lum yuklash amali",
+                            false
+                        );
+                        break;
+                }
+                break;
+
+            default:
+                $this->telegramService->answerCallbackQuery(
+                    $callbackId,
+                    "Noma'lum amal",
+                    false
+                );
+                break;
+        }
+
 
         $this->telegramService->answerCallbackQuery($callbackId, "✅ OK", false);
     }

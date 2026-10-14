@@ -34,6 +34,11 @@ class Router
         $handler = $this->routes[$pattern]
             ?? $this->routes[explode(':', $pattern)[0] . ':*']
             ?? null;
+        Log::info('Router handler diagnostic', [
+            'pattern' => $pattern,
+            'handler' => $handler,
+            'handler_exists' => $handler && class_exists($handler),
+        ]);
         if (!$handler) {
             Log::warning("Router: unknown pattern [{$pattern}]");
             $client->answerCallbackQuery($this->getCallbackId($ctx), __('bot.unknown_action'));
