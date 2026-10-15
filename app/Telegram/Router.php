@@ -47,9 +47,18 @@ class Router
 
         try {
             app($handler)->handle($ctx, $client, $parts);
-        } catch (\Exception $e) {
-            Log::error("Router handler error [{$pattern}]: " . $e->getMessage());
-            $client->answerCallbackQuery($this->getCallbackId($ctx), __('bot.unknown_error'));
+        } catch (\Throwable $e) {
+            Log::error("Router handler error [{$pattern}]", [
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'exception' => get_class($e),
+            ]);
+
+            $client->answerCallbackQuery(
+                $this->getCallbackId($ctx),
+                __('bot.unknown_error')
+            );
         }
     }
 

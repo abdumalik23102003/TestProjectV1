@@ -38,12 +38,20 @@ class TeacherHandler
 
             $controller = app(TeacherController::class);
 
-            match ($action) {
-                'save' => $controller->confirmUpload($telegramUserId),
-                'cancel' => $controller->cancelWizard($telegramUserId),
-                'edit' => $controller->editUpload($telegramUserId),
-                'back' => $controller->editUpload($telegramUserId),
-            };
+            switch ($action) {
+                case 'save':
+                    $controller->confirmUpload($telegramUserId);
+                    break;
+
+                case 'cancel':
+                    $controller->cancelWizard($telegramUserId);
+                    break;
+
+                case 'edit':
+                case 'back':
+                    $controller->editUpload($telegramUserId);
+                    break;
+            }
 
             $client->answerCallbackQuery($this->getCallbackId($ctx));
             return;
