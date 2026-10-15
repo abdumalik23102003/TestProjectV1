@@ -8,28 +8,38 @@ use App\Models\TeacherStudent;
 
 class PermissionService
 {
+
     public function canViewMaterial(User $user, Material $material): bool
     {
-        // Fayl egasi
+        // Faqat faol materiallarni ko‘rish mumkin.
+        if ($material->status !== 'active') {
+            return false;
+        }
+
+        // Fayl egasi.
         if ($material->teacher_id === $user->id) {
             return true;
         }
 
-        // Public material
+        // Ommaviy material.
         if ($material->isPublic()) {
             return true;
         }
 
-        // Private material — bog'lanish kerak
+        // Shaxsiy material — faol bog‘lanish talab qilinadi.
         if ($material->visibility === 'private') {
-            return TeacherStudent::where('teacher_id', $material->teacher_id)
+            return TeacherStudent::where(
+                'teacher_id',
+                $material->teacher_id
+            )
                 ->where('student_id', $user->id)
-                ->where('status', 'active')
+                ->where('status', 'approved')
                 ->exists();
         }
 
         return false;
     }
+
 
     public function canEditMaterial(User $user, Material $material): bool
     {

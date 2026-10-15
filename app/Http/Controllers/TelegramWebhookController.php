@@ -25,6 +25,7 @@ use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Throwable;
+use App\Models\Material;
 
 class TelegramWebhookController extends Controller
 {
@@ -92,7 +93,7 @@ class TelegramWebhookController extends Controller
             }
 
             if ($chatId !== null) {
-                $client->sendMessage((int) $chatId, __('bot.unknown_error'));
+                $client->sendMessage((int)$chatId, __('bot.unknown_error'));
             }
         } catch (Throwable $e) {
             Log::error('Webhook failure notice failed', [
@@ -355,6 +356,7 @@ class TelegramWebhookController extends Controller
         }
 
         // Handle material search input
+
         $searchSession = SessionService::getSession(
             $ctx->telegramUserId,
             'search'
@@ -366,17 +368,20 @@ class TelegramWebhookController extends Controller
             ($searchSession['current_step'] ?? null) === 'enter_query'
         ) {
             $query = trim($ctx->messageText);
+            $scope = $searchSession['scope'] ?? null;
+            $user = User::where(
+                'telegram_user_id',
+                $ctx->telegramUserId
+            )->first();
 
-            if (strlen($query) < 2) {
-                $client->sendMessage(
-                    $ctx->chatId,
-                    __('bot.search_prompt')
-                );
-
-                return;
-            }
-
-            if (!$ctx->user || $ctx->user->status !== 'active') {
+            if (
+                !$user ||
+                $user->status !== 'active' ||
+                ($scope !== null && (
+                        $user->role !== 'teacher' ||
+                        !in_array($scope, ['my', 'shared'], true)
+                    ))
+            ) {
                 SessionService::clearSession(
                     $ctx->telegramUserId,
                     'search'
@@ -390,10 +395,140 @@ class TelegramWebhookController extends Controller
                 return;
             }
 
+            if (mb_strlen($query) < 2) {
+                $client->editOrSendMessage(
+                    $ctx->chatId,
+                    $searchSession['message_id'] ?? null,
+                    '❗ Qidiruv so‘zi kamida 2 ta belgidan iborat bo‘lsin.',
+                    [[
+                        Keyboard::button(
+                            __('bot.btn_back'),
+                            $scope === null ? 'menu:main' : 'teacher:search'
+                        ),
+                    ]]
+                );
+
+                return;
+            }
+
             try {
-                app(StudentController::class)->search(
-                    $ctx->user,
-                    $query
+                // O‘quvchining mavjud qidiruvi o‘z holicha qoladi.
+                if ($scope === null) {
+                    SessionService::updateWizard(
+                        $ctx->telegramUserId,
+                        'search',
+                        'show_results',
+                        [
+                            'query' => $query,
+                        ]
+                    );
+
+                    app(StudentController::class)->search(
+                        $user,
+                        $query
+                    );
+
+                    return;
+                }
+
+                $materialsQuery = Material::query()
+                    ->with('teacher')
+                    ->where('status', 'active')
+                    ->where(function ($q) use ($query) {
+                        $q->where('title', 'like', '%' . $query . '%')
+                            ->orWhere(
+                                'description',
+                                'like',
+                                '%' . $query . '%'
+                            )
+                            ->orWhere(
+                                'original_filename',
+                                'like',
+                                '%' . $query . '%'
+                            );
+                    });
+
+                if ($scope === 'my') {
+                    $materialsQuery->where(
+                        'teacher_id',
+                        $user->id
+                    );
+                } else {
+                    $materialsQuery
+                        ->where('visibility', 'public')
+                        ->whereHas('teacher', function ($q) {
+                            $q->where('role', 'teacher')
+                                ->where('status', 'active');
+                        });
+                }
+
+                $materials = $materialsQuery
+                    ->latest()
+                    ->limit(10)
+                    ->get();
+
+                $text = $scope === 'my'
+                    ? "📚 <b>Mening fayllarim — qidiruv natijalari</b>\n\n"
+                    : "🌍 <b>Umumiy baza — qidiruv natijalari</b>\n\n";
+
+                $buttons = [];
+
+                if ($materials->isEmpty()) {
+                    $text .= '❌ Hech narsa topilmadi.';
+                } else {
+                    foreach ($materials as $material) {
+                        $text .= '📄 <b>' .
+                            e($material->title) .
+                            "</b>\n";
+
+                        $text .= '👨‍🏫 ' .
+                            e($material->teacher?->full_name ?? 'Noma’lum ustoz') .
+                            "\n";
+
+                        if ($material->description) {
+                            $text .= e(
+                                    \Illuminate\Support\Str::limit(
+                                        $material->description,
+                                        100
+                                    )
+                                ) . "\n";
+                        }
+
+                        $text .= "\n";
+
+                        $buttons[] = [
+                            Keyboard::button(
+                                '📄 ' . \Illuminate\Support\Str::limit(
+                                    $material->title,
+                                    30
+                                ),
+                                $scope === 'my'
+                                    ? 'teacher:view:' . $material->id
+                                    : 'student:download:' . $material->id
+                            ),
+                        ];
+                    }
+                }
+
+                $buttons[] = [
+                    Keyboard::button(
+                        '🔎 Boshqa qidiruv',
+                        'teacher:search'
+                    ),
+                ];
+
+                $buttons[] = [
+                    Keyboard::button(
+                        __('bot.btn_back'),
+                        'menu:main'
+                    ),
+                ];
+
+                $client->editOrSendMessage(
+                    $ctx->chatId,
+                    $searchSession['message_id'] ?? null,
+                    $text,
+                    $buttons
                 );
 
                 SessionService::clearSession(
@@ -403,12 +538,25 @@ class TelegramWebhookController extends Controller
             } catch (Throwable $e) {
                 Log::error('Material search failed', [
                     'telegram_user_id' => $ctx->telegramUserId,
+                    'scope' => $scope,
                     'error' => $e->getMessage(),
                 ]);
 
-                $client->sendMessage(
+                $client->editOrSendMessage(
                     $ctx->chatId,
-                    __('bot.no_results')
+                    $searchSession['message_id'] ?? null,
+                    '❌ Qidiruvda xatolik yuz berdi. Qayta urinib ko‘ring.',
+                    [[
+                        Keyboard::button(
+                            __('bot.btn_back'),
+                            $scope === null ? 'menu:main' : 'teacher:search'
+                        ),
+                    ]]
+                );
+
+                SessionService::clearSession(
+                    $ctx->telegramUserId,
+                    'search'
                 );
             }
 
@@ -422,6 +570,7 @@ class TelegramWebhookController extends Controller
             $router->register('role:*', RoleHandler::class);
             $router->register('menu:*', MenuHandler::class);
             $router->register('teacher:*', TeacherHandler::class);
+            $router->register('material:*', TeacherHandler::class);
             $router->register('upload:*', TeacherHandler::class);
             $router->register('student:*', StudentHandler::class);
             $router->register('admin:*', AdminHandler::class);
@@ -445,10 +594,11 @@ class TelegramWebhookController extends Controller
     }
 
     protected function handleRegistrationName(
-        UpdateContext $ctx,
+        UpdateContext  $ctx,
         TelegramClient $client,
-        ?string $name
-    ): void {
+        ?string        $name
+    ): void
+    {
         $name = trim($name ?? '');
 
         if (strlen($name) < 2 || strlen($name) > 100) {
@@ -547,8 +697,9 @@ class TelegramWebhookController extends Controller
 
     protected function notifyAdmins(
         TelegramClient $client,
-        string $message
-    ): void {
+        string         $message
+    ): void
+    {
         $adminIds = array_filter(
             array_map(
                 'intval',

@@ -2,6 +2,8 @@
 
 namespace App\Telegram\Handlers;
 
+use App\Http\Controllers\StudentController;
+use App\Models\User;
 use App\Telegram\UpdateContext;
 use App\Telegram\TelegramClient;
 use App\Telegram\Keyboard;
@@ -20,6 +22,20 @@ class StudentHandler
             'teachers' => $this->listTeachers($ctx, $client),
             'recent' => $this->listRecent($ctx, $client),
             'profile' => $this->showProfile($ctx, $client),
+            'search_next' => $this->changeSearchPage(
+                $ctx,
+                $client,
+                (int) ($parts[2] ?? 1)
+            ),
+            'search_prev' => $this->changeSearchPage(
+                $ctx,
+                $client,
+                (int) ($parts[2] ?? 1)
+            ),
+            'download' => $this->downloadMaterial(
+                $ctx,
+                (int) ($parts[2] ?? 0)
+            ),
             default => $client->answerCallbackQuery($this->getCallbackId($ctx), __('bot.unknown_action')),
         };
     }
@@ -39,6 +55,49 @@ class StudentHandler
         $client->sendMessage(
             $ctx->chatId,
             __('bot.search_prompt')
+        );
+    }
+
+    protected function downloadMaterial(
+        UpdateContext $ctx,
+        int $materialId
+    ): void {
+        $callbackId = $this->getCallbackId($ctx);
+
+        $user = User::where(
+            'telegram_user_id',
+            $ctx->telegramUserId
+        )->first();
+
+        if (
+            !$user ||
+            $user->status !== 'active' ||
+            !in_array($user->role, ['teacher', 'student'], true)
+        ) {
+            app(TelegramClient::class)->answerCallbackQuery(
+                $callbackId,
+                __('bot.unauthorized'),
+                true
+            );
+
+            return;
+        }
+
+        if ($materialId < 1) {
+            app(TelegramClient::class)->answerCallbackQuery(
+                $callbackId,
+                __('bot.unknown_action'),
+                true
+            );
+
+            return;
+        }
+
+        app(TelegramClient::class)->answerCallbackQuery($callbackId);
+
+        app(StudentController::class)->download(
+            $user,
+            $materialId
         );
     }
 
@@ -70,7 +129,12 @@ class StudentHandler
             [Keyboard::button(__('bot.btn_back'), 'menu:main')],
         ];
 
-        $client->sendMessage($ctx->chatId, $text, $buttons);
+        $client->editOrSendMessage(
+            $ctx->chatId,
+            $ctx->messageId,
+            $text,
+            $buttons
+        );
     }
 
     protected function listRecent(UpdateContext $ctx, TelegramClient $client): void
@@ -122,7 +186,117 @@ class StudentHandler
             $client->sendMessage($ctx->chatId, $text, $buttons);
         }
     }
+    protected function changeSearchPage(
+        UpdateContext $ctx,
+        TelegramClient $client,
+        int $page
+    ): void {
+        $user = User::where(
+            'telegram_user_id',
+            $ctx->telegramUserId
+        )->first();
 
+        if (
+            !$user ||
+            $user->status !== 'active' ||
+            !in_array($user->role, ['teacher', 'student'], true)
+        ) {
+            $client->answerCallbackQuery(
+                $this->getCallbackId($ctx),
+                __('bot.unauthorized'),
+                true
+            );
+
+            return;
+        }
+
+        $session = SessionService::getSession(
+            $ctx->telegramUserId,
+            'search'
+        );
+
+        if (
+            !$session ||
+            ($session['current_step'] ?? null) !== 'show_results' ||
+            empty($session['query'])
+        ) {
+            $client->answerCallbackQuery(
+                $this->getCallbackId($ctx),
+                'Qidiruv sessiyasi tugagan. Qayta qidiring.',
+                true
+            );
+
+            return;
+        }
+
+        $page = max(1, $page);
+
+        $results = app(\App\Services\SearchService::class)->search(
+            $user,
+            $session['query'],
+            $page
+        );
+
+        $client->answerCallbackQuery($this->getCallbackId($ctx));
+
+        if ($results->isEmpty() && $page > 1) {
+            $page--;
+
+            $results = app(\App\Services\SearchService::class)->search(
+                $user,
+                $session['query'],
+                $page
+            );
+        }
+
+        $text = "🔍 <b>Qidiruv natijalari</b>\n\n";
+        $buttons = [];
+
+        foreach ($results as $material) {
+            $text .= '📄 ' . e($material->title) . "\n";
+            $text .= '👨‍🏫 ' . e($material->teacher?->full_name ?? 'Noma’lum ustoz') . "\n\n";
+
+            $buttons[] = [
+                Keyboard::button(
+                    '⬇️ ' . \Illuminate\Support\Str::limit($material->title, 25),
+                    'student:download:' . $material->id
+                ),
+            ];
+        }
+
+        if ($results->isEmpty()) {
+            $text .= '❌ Natija topilmadi.';
+        }
+
+        if ($results->currentPage() > 1) {
+            $buttons[] = [
+                Keyboard::button(
+                    '⬅️ Oldingi',
+                    'student:search_prev:' . ($results->currentPage() - 1)
+                ),
+            ];
+        }
+
+        if ($results->hasMorePages()) {
+            $buttons[] = [
+                Keyboard::button(
+                    'Keyingi ➡️',
+                    'student:search_next:' . ($results->currentPage() + 1)
+                ),
+            ];
+        }
+
+        $buttons[] = [
+            Keyboard::button(__('bot.btn_back'), 'menu:main'),
+        ];
+
+        $client->editOrSendMessage(
+            $ctx->chatId,
+            $ctx->messageId,
+            $text,
+            $buttons
+        );
+    }
     protected function getCallbackId(UpdateContext $ctx): string
     {
         return $ctx->rawUpdate['callback_query']['id'] ?? '';

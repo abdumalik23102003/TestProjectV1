@@ -7,11 +7,12 @@ use App\Models\BotSession;
 class SessionService
 {
     public static function startWizard(
-        int $telegramUserId,
+        int    $telegramUserId,
         string $processType,
         string $initialStep,
-        array $initialData = []
-    ): void {
+        array  $initialData = []
+    ): void
+    {
         BotSession::updateOrCreate(
             [
                 'telegram_user_id' => $telegramUserId,
@@ -24,16 +25,17 @@ class SessionService
                     JSON_UNESCAPED_UNICODE
                 ),
                 'expires_at' => now()->addMinutes(
-                    (int) config('materials.wizard_session_timeout', 15)
+                    (int)config('materials.wizard_session_timeout', 15)
                 ),
             ]
         );
     }
 
     public static function getSession(
-        int $telegramUserId,
+        int    $telegramUserId,
         string $processType
-    ): ?array {
+    ): ?array
+    {
         $session = BotSession::where('telegram_user_id', $telegramUserId)
             ->where('process_type', $processType)
             ->first();
@@ -59,10 +61,11 @@ class SessionService
     }
 
     public static function updateSessionPayload(
-        int $telegramUserId,
+        int    $telegramUserId,
         string $processType,
-        array $data
-    ): void {
+        array  $data
+    ): void
+    {
         $session = BotSession::where('telegram_user_id', $telegramUserId)
             ->where('process_type', $processType)
             ->first();
@@ -76,18 +79,19 @@ class SessionService
         $session->update([
             'payload' => json_encode($data, JSON_UNESCAPED_UNICODE),
             'expires_at' => now()->addMinutes(
-                (int) config('materials.wizard_session_timeout', 15)
+                (int)config('materials.wizard_session_timeout', 15)
             ),
         ]);
     }
 
-    // Ma'lumotlarni va joriy bosqichni birgalikda yangilaydi.
+// Ma'lumotlarni va joriy bosqichni birgalikda yangilaydi.
     public static function updateWizard(
-        int $telegramUserId,
+        int    $telegramUserId,
         string $processType,
         string $nextStep,
-        array $data
-    ): void {
+        array  $data
+    ): void
+    {
         $session = BotSession::where('telegram_user_id', $telegramUserId)
             ->where('process_type', $processType)
             ->first();
@@ -96,21 +100,26 @@ class SessionService
             return;
         }
 
+        $payload = json_decode($session->payload, true) ?? [];
+
         unset($data['current_step']);
+
+        $payload = array_merge($payload, $data);
 
         $session->update([
             'current_step' => $nextStep,
-            'payload' => json_encode($data, JSON_UNESCAPED_UNICODE),
+            'payload' => json_encode($payload, JSON_UNESCAPED_UNICODE),
             'expires_at' => now()->addMinutes(
-                (int) config('materials.wizard_session_timeout', 15)
+                (int)config('materials.wizard_session_timeout', 15)
             ),
         ]);
     }
 
     public static function clearSession(
-        int $telegramUserId,
+        int     $telegramUserId,
         ?string $processType = null
-    ): void {
+    ): void
+    {
         $query = BotSession::where(
             'telegram_user_id',
             $telegramUserId

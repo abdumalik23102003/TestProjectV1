@@ -12,6 +12,7 @@ use App\Services\TelegramService;
 use App\Services\SessionService;
 use App\Services\StorageService;
 use App\Services\PermissionService;
+use App\Telegram\TelegramClient;
 use Illuminate\Support\Str;
 
 class TeacherController extends Controller
@@ -230,6 +231,57 @@ class TeacherController extends Controller
         }
     }
 
+    private function sendUploadStepMessage(
+        int    $telegramUserId,
+        string $text,
+        array  $buttons = []
+    ): void
+    {
+        $session = SessionService::getSession($telegramUserId, 'upload') ?? [];
+
+        $messageId = isset($session['message_id'])
+            ? (int)$session['message_id']
+            : null;
+
+        $keyboard = $buttons !== []
+            ? $this->telegramService->buildInlineKeyboard($buttons)
+            : null;
+
+        $result = app(TelegramClient::class)->editOrSendMessage(
+            $telegramUserId,
+            $messageId,
+            $text,
+            $keyboard
+        );
+
+        if (empty($result['ok'])) {
+            return;
+        }
+
+        // Tahrirlangan xabarda ham, yangi xabar yuborilganda ham
+        // Telegram qaytargan message_id ni saqlaymiz.
+        $resultMessageId = $result['result']['message_id'] ?? null;
+
+        if ($resultMessageId !== null) {
+            $session['message_id'] = (int)$resultMessageId;
+        } elseif ($messageId !== null) {
+            // "Message is not modified" holatida oldingi ID saqlanadi.
+            $session['message_id'] = $messageId;
+        } else {
+            return;
+        }
+
+        $currentStep = $session['current_step'] ?? 'enter_title';
+
+        SessionService::updateWizard(
+            $telegramUserId,
+            'upload',
+            $currentStep,
+            $session
+        );
+    }
+
+
     private function askMetadataStep(
         int    $telegramUserId,
         string $step
@@ -238,36 +290,178 @@ class TeacherController extends Controller
         if ($step === 'enter_title') {
             $text = "📝 Fayl sarlavhasini yuboring.\n";
             $text .= "Fayl nomidan foydalanish uchun - yuboring.";
-        } elseif ($step === 'enter_description') {
-            $text = "💬 Fayl tavsifini yuboring.\n";
-            $text .= "Tavsif kiritmaslik uchun - yuboring.";
-        } elseif ($step === 'enter_category') {
-            $categories = Category::where('is_active', true)
-                ->orderBy('sort_order')
-                ->orderBy('name')
-                ->get()
-                ->values();
 
-            $text = "🏷 Kategoriya raqamini yuboring:\n\n";
-
-            foreach ($categories as $index => $category) {
-                $text .= ($index + 1) . '. ' . $category->name . "\n";
-            }
-
-            $text .= "\nKategoriyasiz saqlash uchun - yuboring.";
-
-            if ($categories->isEmpty()) {
-                $text = "Faol kategoriyalar yo‘q.\nKategoriyasiz davom etish uchun - yuboring.";
-            }
-        } elseif ($step === 'enter_visibility') {
-            $text = "🔒 Fayl ko‘rinishini tanlang.\n";
-            $text .= "public — barcha tegishli o‘quvchilar topishi mumkin.\n";
-            $text .= "private — faqat ruxsat berilgan foydalanuvchilar.";
-        } else {
+            $this->sendUploadStepMessage($telegramUserId, $text);
             return;
         }
 
-        $this->telegramService->sendMessage($telegramUserId, $text);
+        if ($step === 'enter_description') {
+            $text = "💬 Fayl tavsifini yuboring.\n";
+            $text .= "Tavsif kiritmaslik uchun - yuboring.";
+
+            $this->sendUploadStepMessage($telegramUserId, $text);
+            return;
+        }
+
+        if ($step === 'enter_category') {
+            $categories = Category::where('is_active', true)
+                ->orderBy('sort_order')
+                ->orderBy('name')
+                ->get();
+
+            $text = "🏷 <b>Kategoriyani tanlang</b>\n\n";
+
+            $buttons = [];
+
+            foreach ($categories as $category) {
+                $buttons[] = [
+                    'text' => $category->name,
+                    'callback_data' => 'upload:cat:' . $category->id,
+                ];
+            }
+
+            if ($categories->isEmpty()) {
+                $text .= "Hozircha faol kategoriyalar mavjud emas.\n";
+            }
+
+            $buttons[] = [
+                'text' => '⏭ Kategoriyasiz davom etish',
+                'callback_data' => 'upload:cat:none',
+            ];
+
+            $buttons[] = [
+                'text' => '❌ Bekor qilish',
+                'callback_data' => 'upload:cancel',
+            ];
+
+            $this->sendUploadStepMessage(
+                $telegramUserId,
+                $text,
+                $buttons
+            );
+
+            return;
+        }
+
+        if ($step === 'enter_visibility') {
+            $text = "🔒 <b>Fayl ko‘rinishini tanlang</b>\n\n";
+            $text .= "🌐 Hammaga ochiq — o‘quvchilar materialni topishi mumkin.\n";
+            $text .= "🔒 Shaxsiy — faqat ruxsat berilgan foydalanuvchilar.";
+
+            $buttons = [
+                [
+                    'text' => '🌐 Hammaga ochiq',
+                    'callback_data' => 'upload:vis:public',
+                ],
+                [
+                    'text' => '🔒 Shaxsiy',
+                    'callback_data' => 'upload:vis:private',
+                ],
+                [
+                    'text' => '❌ Bekor qilish',
+                    'callback_data' => 'upload:cancel',
+                ],
+            ];
+
+            $this->sendUploadStepMessage(
+                $telegramUserId,
+                $text,
+                $buttons
+            );
+        }
+    }
+
+
+    public function selectUploadCategory(
+        int    $telegramUserId,
+        string $categoryId
+    ): void
+    {
+        $session = SessionService::getSession($telegramUserId, 'upload');
+
+        if (
+            !$session ||
+            ($session['current_step'] ?? '') !== 'enter_category'
+        ) {
+            $this->telegramService->sendMessage(
+                $telegramUserId,
+                '❌ Yuklash sessiyasi tugagan. Qaytadan boshlang.'
+            );
+
+            return;
+        }
+
+        if ($categoryId === 'none') {
+            $session['category_id'] = null;
+            $session['category_name'] = null;
+        } else {
+            $category = Category::where('is_active', true)
+                ->where('id', (int)$categoryId)
+                ->first();
+
+            if (!$category) {
+                $this->telegramService->sendMessage(
+                    $telegramUserId,
+                    '❌ Kategoriya topilmadi. Qaytadan tanlang.'
+                );
+
+                $this->askMetadataStep($telegramUserId, 'enter_category');
+                return;
+            }
+
+            $session['category_id'] = $category->id;
+            $session['category_name'] = $category->name;
+        }
+
+        SessionService::updateWizard(
+            $telegramUserId,
+            'upload',
+            'enter_visibility',
+            $session
+        );
+
+        $this->askMetadataStep($telegramUserId, 'enter_visibility');
+    }
+
+    public function selectUploadVisibility(
+        int    $telegramUserId,
+        string $visibility
+    ): void
+    {
+        $session = SessionService::getSession($telegramUserId, 'upload');
+
+        if (
+            !$session ||
+            ($session['current_step'] ?? '') !== 'enter_visibility'
+        ) {
+            $this->telegramService->sendMessage(
+                $telegramUserId,
+                '❌ Yuklash sessiyasi tugagan. Qaytadan boshlang.'
+            );
+
+            return;
+        }
+
+        if (!in_array($visibility, ['public', 'private'], true)) {
+            return;
+        }
+
+        $session['visibility'] = $visibility;
+
+        SessionService::updateWizard(
+            $telegramUserId,
+            'upload',
+            'confirm',
+            $session
+        );
+
+        $this->showConfirmation(
+            $telegramUserId,
+            SessionService::getSession(
+                $telegramUserId,
+                'upload'
+            ) ?? $session
+        );
     }
 
     public function editUpload(int $telegramUserId): void
@@ -311,7 +505,11 @@ class TeacherController extends Controller
             ['text' => '✖️ Bekor', 'callback_data' => 'upload:cancel']
         ];
 
-        $this->telegramService->sendMessage($telegramUserId, $text, $buttons);
+        $this->sendUploadStepMessage(
+            $telegramUserId,
+            $text,
+            $buttons
+        );
     }
 
     public function confirmUpload(int $telegramUserId): void
@@ -421,14 +619,32 @@ class TeacherController extends Controller
         foreach ($materials as $material) {
             $text .= "📄 " . $material->title . "\n";
             $text .= "🔒 " . ($material->isPublic() ? 'Public' : 'Private') . "\n";
-            $text .= "📦 " . formatBytes($material->size_bytes) . "\n\n";
+            $text .= "📦 " . $this->formatBytes((int)$material->size_bytes) . "\n\n";
 
             $buttons[] = [
                 'text' => '📋 ' . Str::limit($material->title, 20),
-                'callback_data' => "material:view:{$material->id}"
+                'callback_data' => "material:view:{$material->id}",
             ];
         }
 
         $this->telegramService->sendMessage($user->telegram_user_id, $text, $buttons);
+    }
+
+    private function formatBytes(int $bytes): string
+    {
+        if ($bytes <= 0) {
+            return '0 B';
+        }
+
+        $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        $index = 0;
+        $size = (float)$bytes;
+
+        while ($size >= 1024 && $index < count($units) - 1) {
+            $size /= 1024;
+            $index++;
+        }
+
+        return round($size, 2) . ' ' . $units[$index];
     }
 }

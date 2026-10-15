@@ -1,0 +1,423 @@
+diff --git a/app/Http/Controllers/TelegramWebhookController.php b/app/Http/Controllers/TelegramWebhookController.php
+index e6dc178..f890558 100644
+--- a/app/Http/Controllers/TelegramWebhookController.php
++++ b/app/Http/Controllers/TelegramWebhookController.php
+@@ -65,11 +65,42 @@ public function handleWebhook(Request $request): Response
+                 'file' => $e->getFile(),
+                 'line' => $e->getLine(),
+             ]);
++
++            $this->notifyProcessingFailure($update);
+         }
+ 
+         return response('', 200);
+     }
+ 
++    /**
++     * Ishlov berishda kutilmagan xato bo'lsa, foydalanuvchi jim qolib ketmasligi uchun
++     * unga qisqa xabar yuboramiz (va callback bo'lsa, tugma "aylanishini" to'xtatamiz).
++     */
++    protected function notifyProcessingFailure(array $update): void
++    {
++        try {
++            $client = new TelegramClient();
++
++            $chatId = $update['message']['chat']['id']
++                ?? $update['callback_query']['message']['chat']['id']
++                ?? null;
++
++            $callbackId = $update['callback_query']['id'] ?? null;
++
++            if ($callbackId !== null) {
++                $client->answerCallbackQuery($callbackId);
++            }
++
++            if ($chatId !== null) {
++                $client->sendMessage((int) $chatId, __('bot.unknown_error'));
++            }
++        } catch (Throwable $e) {
++            Log::error('Webhook failure notice failed', [
++                'error' => $e->getMessage(),
++            ]);
++        }
++    }
++
+     protected function process(UpdateContext $ctx): void
+     {
+         $client = new TelegramClient();
+@@ -166,6 +197,12 @@ protected function process(UpdateContext $ctx): void
+                 return;
+             }
+ 
++            // Ustoz fayl qabul qilinganini darhol ko'rsin (yuklab olish biroz vaqt olishi mumkin).
++            $client->sendMessage(
++                $ctx->chatId,
++                __('bot.file_downloading')
++            );
++
+             $fileInfo = $client->getFile($ctx->fileId);
+ 
+             if (!($fileInfo['ok'] ?? false)) {
+@@ -302,6 +339,19 @@ protected function process(UpdateContext $ctx): void
+ 
+                 return;
+             }
++
++            // Ustoz "Fayl yuklash"ni bosdi, lekin fayl o'rniga matn yubordi — jim qolmaymiz.
++            if (
++                $uploadSession &&
++                ($uploadSession['current_step'] ?? '') === 'awaiting_file'
++            ) {
++                $client->sendMessage(
++                    $ctx->chatId,
++                    __('bot.awaiting_file_hint')
++                );
++
++                return;
++            }
+         }
+ 
+         // Handle material search input
+diff --git a/app/Services/TelegramService.php b/app/Services/TelegramService.php
+index b879a3e..ce3d17d 100644
+--- a/app/Services/TelegramService.php
++++ b/app/Services/TelegramService.php
+@@ -2,6 +2,7 @@
+ 
+ namespace App\Services;
+ 
++use App\Telegram\TelegramClient;
+ use Illuminate\Support\Facades\Http;
+ 
+ class TelegramService
+@@ -15,22 +16,44 @@ public function __construct()
+         $this->apiBaseUrl = config('telegram.api_url');
+     }
+ 
++    /**
++     * Xabar yuborish.
++     *
++     * $buttons — yoki tekis tugmalar ro'yxati (2 tadan qatorga bo'linadi),
++     * yoki tayyor qatorlar ro'yxati [[btn, btn], [btn]].
++     *
++     * Barcha so'rovlar TelegramClient orqali ketadi: u Telegram xatolarini
++     * logga yozadi va tokenni maskalaydi.
++     */
+     public function sendMessage(int $chatId, string $text, array $buttons = []): array
+     {
+-        $replyMarkup = [];
++        $keyboard = $this->buildInlineKeyboard($buttons);
+ 
+-        if (!empty($buttons)) {
+-            $replyMarkup = ['inline_keyboard' => [array_chunk($buttons, 2)]];
++        return (new TelegramClient())->sendMessage(
++            $chatId,
++            $text,
++            $keyboard !== [] ? $keyboard : null
++        );
++    }
++
++    /**
++     * Tugmalarni Telegram inline_keyboard formatiga (qatorlar ro'yxati) keltiradi.
++     */
++    public function buildInlineKeyboard(array $buttons): array
++    {
++        if ($buttons === []) {
++            return [];
+         }
+ 
+-        $response = Http::post("{$this->apiBaseUrl}/bot{$this->botToken}/sendMessage", [
+-            'chat_id' => $chatId,
+-            'text' => $text,
+-            'parse_mode' => 'HTML',
+-            'reply_markup' => !empty($replyMarkup) ? json_encode($replyMarkup) : null,
+-        ]);
++        $first = reset($buttons);
+ 
+-        return $response->json();
++        // Allaqachon qatorlarga bo'lingan: [[btn, btn], [btn]]
++        if (is_array($first) && !array_key_exists('text', $first)) {
++            return array_values($buttons);
++        }
++
++        // Tekis ro'yxat: [btn, btn, btn] -> [[btn, btn], [btn]]
++        return array_chunk(array_values($buttons), 2);
+     }
+ 
+     public function sendDocument(int $chatId, $file, string $filename = 'document'): array
+@@ -45,15 +68,11 @@ public function sendDocument(int $chatId, $file, string $filename = 'document'):
+ 
+     public function editMessageReplyMarkup(int $chatId, int $messageId, array $buttons): array
+     {
+-        $replyMarkup = ['inline_keyboard' => [array_chunk($buttons, 2)]];
+-
+-        $response = Http::post("{$this->apiBaseUrl}/bot{$this->botToken}/editMessageReplyMarkup", [
+-            'chat_id' => $chatId,
+-            'message_id' => $messageId,
+-            'reply_markup' => json_encode($replyMarkup),
+-        ]);
+-
+-        return $response->json();
++        return (new TelegramClient())->editMessageReplyMarkup(
++            $chatId,
++            $messageId,
++            $this->buildInlineKeyboard($buttons)
++        );
+     }
+ 
+     public function answerCallbackQuery(string $callbackQueryId, string $text = '', bool $showAlert = false): array
+diff --git a/app/Telegram/Router.php b/app/Telegram/Router.php
+index d3e2d69..5552ec9 100644
+--- a/app/Telegram/Router.php
++++ b/app/Telegram/Router.php
+@@ -47,8 +47,12 @@ public function route(UpdateContext $ctx, TelegramClient $client): void
+ 
+         try {
+             app($handler)->handle($ctx, $client, $parts);
+-        } catch (\Exception $e) {
+-            Log::error("Router handler error [{$pattern}]: " . $e->getMessage());
++        } catch (\Throwable $e) {
++            // Throwable: TypeError/Error ham ushlanadi, aks holda tugma "aylanib" qoladi.
++            Log::error("Router handler error [{$pattern}]: " . $e->getMessage(), [
++                'file' => $e->getFile(),
++                'line' => $e->getLine(),
++            ]);
+             $client->answerCallbackQuery($this->getCallbackId($ctx), __('bot.unknown_error'));
+         }
+     }
+diff --git a/lang/uz/bot.php b/lang/uz/bot.php
+index 1a1b126..e8138d5 100644
+--- a/lang/uz/bot.php
++++ b/lang/uz/bot.php
+@@ -169,4 +169,8 @@
+     'student_removed' => '🗑 O\'quvchi udalindi',
+     'student_approved' => '✅ O\'quvchi tasdiqlandi',
+     'student_rejected' => '❌ O\'quvchi rad etildi',
++
++    // Upload flow
++    'file_downloading' => '📥 Fayl qabul qilindi, tekshirilmoqda...',
++    'awaiting_file_hint' => '📎 Iltimos, matn emas, fayl yuboring (PDF, DOCX, rasm va h.k.).',
+ ];
+diff --git a/tests/Feature/TeacherUploadFlowTest.php b/tests/Feature/TeacherUploadFlowTest.php
+new file mode 100644
+index 0000000..664a0f8
+--- /dev/null
++++ b/tests/Feature/TeacherUploadFlowTest.php
+@@ -0,0 +1,132 @@
++<?php
++
++namespace Tests\Feature;
++
++use App\Models\User;
++use App\Services\SessionService;
++use Illuminate\Foundation\Testing\RefreshDatabase;
++use Illuminate\Support\Facades\Http;
++use Illuminate\Support\Facades\Storage;
++use Tests\TestCase;
++
++class TeacherUploadFlowTest extends TestCase
++{
++    use RefreshDatabase;
++
++    private const TEACHER_ID = 555001;
++
++    protected function setUp(): void
++    {
++        parent::setUp();
++
++        config(['telegram.bot_token' => 'test-token']);
++
++        User::create([
++            'telegram_user_id' => self::TEACHER_ID,
++            'full_name' => 'Test Ustoz',
++            'role' => 'teacher',
++            'status' => 'active',
++        ]);
++    }
++
++    private function fakeTelegram(): void
++    {
++        $pdf = "%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n";
++
++        Http::fake([
++            'api.telegram.org/file/*' => Http::response($pdf),
++            'api.telegram.org/bot*/getFile' => Http::response([
++                'ok' => true,
++                'result' => ['file_path' => 'documents/file_1.pdf'],
++            ]),
++            'api.telegram.org/bot*' => Http::response(['ok' => true, 'result' => []]),
++        ]);
++    }
++
++    private function assertMessageSent(string $needle): void
++    {
++        Http::assertSent(function ($request) use ($needle) {
++            return str_contains($request->url(), '/sendMessage')
++                && str_contains((string) ($request['text'] ?? ''), $needle);
++        });
++    }
++
++    public function test_teacher_gets_replies_after_sending_a_file(): void
++    {
++        Storage::fake('private_materials');
++        $this->fakeTelegram();
++
++        SessionService::startWizard(self::TEACHER_ID, 'upload', 'awaiting_file');
++
++        $this->postJson('/api/telegram/webhook', [
++            'update_id' => 710001,
++            'message' => [
++                'message_id' => 1,
++                'chat' => ['id' => self::TEACHER_ID],
++                'from' => ['id' => self::TEACHER_ID],
++                'document' => ['file_id' => 'abc', 'file_name' => 'lesson.pdf'],
++            ],
++        ])->assertOk();
++
++        // 1) Fayl qabul qilingani haqida darhol javob
++        $this->assertMessageSent(__('bot.file_downloading'));
++
++        // 2) Metadata bosqichi: sarlavha so'raladi
++        $this->assertMessageSent('sarlavha');
++
++        $session = SessionService::getSession(self::TEACHER_ID, 'upload');
++        $this->assertSame('enter_title', $session['current_step']);
++    }
++
++    public function test_confirmation_message_has_valid_buttons(): void
++    {
++        SessionService::startWizard(self::TEACHER_ID, 'upload', 'enter_visibility', [
++            'file_path' => 'x/lesson.pdf',
++            'original_name' => 'lesson.pdf',
++            'title' => 'Dars',
++            'description' => null,
++        ]);
++
++        $this->fakeTelegram();
++
++        $this->postJson('/api/telegram/webhook', [
++            'update_id' => 710002,
++            'message' => [
++                'message_id' => 2,
++                'chat' => ['id' => self::TEACHER_ID],
++                'from' => ['id' => self::TEACHER_ID],
++                'text' => 'public',
++            ],
++        ])->assertOk();
++
++        Http::assertSent(function ($request) {
++            if (!str_contains($request->url(), '/sendMessage')) {
++                return false;
++            }
++
++            $markup = json_decode($request['reply_markup'] ?? 'null', true);
++
++            return str_contains((string) ($request['text'] ?? ''), 'Tasdiqlang')
++                && isset($markup['inline_keyboard'][0][0]['text']);
++        });
++    }
++
++    public function test_text_instead_of_file_gets_a_hint(): void
++    {
++        $this->fakeTelegram();
++
++        SessionService::startWizard(self::TEACHER_ID, 'upload', 'awaiting_file');
++
++        $this->postJson('/api/telegram/webhook', [
++            'update_id' => 710003,
++            'message' => [
++                'message_id' => 3,
++                'chat' => ['id' => self::TEACHER_ID],
++                'from' => ['id' => self::TEACHER_ID],
++                'text' => 'salom',
++            ],
++        ])->assertOk();
++
++        $this->assertMessageSent(__('bot.awaiting_file_hint'));
++    }
++}
+diff --git a/tests/Unit/TelegramServiceTest.php b/tests/Unit/TelegramServiceTest.php
+new file mode 100644
+index 0000000..5c80739
+--- /dev/null
++++ b/tests/Unit/TelegramServiceTest.php
+@@ -0,0 +1,79 @@
++<?php
++
++namespace Tests\Unit;
++
++use App\Services\TelegramService;
++use Illuminate\Support\Facades\Http;
++use Tests\TestCase;
++
++class TelegramServiceTest extends TestCase
++{
++    public function test_flat_buttons_are_split_into_rows_of_two(): void
++    {
++        $service = new TelegramService();
++
++        $rows = $service->buildInlineKeyboard([
++            ['text' => 'A', 'callback_data' => 'a'],
++            ['text' => 'B', 'callback_data' => 'b'],
++            ['text' => 'C', 'callback_data' => 'c'],
++        ]);
++
++        $this->assertCount(2, $rows);
++        $this->assertCount(2, $rows[0]);
++        $this->assertCount(1, $rows[1]);
++        $this->assertSame('A', $rows[0][0]['text']);
++    }
++
++    public function test_prebuilt_rows_are_kept_as_is(): void
++    {
++        $service = new TelegramService();
++
++        $rows = $service->buildInlineKeyboard([
++            [['text' => 'A', 'callback_data' => 'a']],
++            [['text' => 'B', 'callback_data' => 'b'], ['text' => 'C', 'callback_data' => 'c']],
++        ]);
++
++        $this->assertCount(2, $rows);
++        $this->assertCount(1, $rows[0]);
++        $this->assertCount(2, $rows[1]);
++    }
++
++    public function test_empty_buttons_give_empty_keyboard(): void
++    {
++        $this->assertSame([], (new TelegramService())->buildInlineKeyboard([]));
++    }
++
++    public function test_send_message_sends_valid_inline_keyboard(): void
++    {
++        config(['telegram.bot_token' => 'test-token']);
++        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
++
++        (new TelegramService())->sendMessage(123, 'Salom', [
++            ['text' => 'A', 'callback_data' => 'a'],
++            ['text' => 'B', 'callback_data' => 'b'],
++            ['text' => 'C', 'callback_data' => 'c'],
++        ]);
++
++        Http::assertSent(function ($request) {
++            $markup = json_decode($request['reply_markup'] ?? 'null', true);
++
++            // inline_keyboard: qatorlar ro'yxati, har bir element — tugma ('text' kalitli).
++            return str_contains($request->url(), '/sendMessage')
++                && isset($markup['inline_keyboard'][0][0]['text'])
++                && isset($markup['inline_keyboard'][1][0]['text']);
++        });
++    }
++
++    public function test_send_message_without_buttons_has_no_reply_markup(): void
++    {
++        config(['telegram.bot_token' => 'test-token']);
++        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
++
++        (new TelegramService())->sendMessage(123, 'Salom');
++
++        Http::assertSent(function ($request) {
++            return str_contains($request->url(), '/sendMessage')
++                && !array_key_exists('reply_markup', $request->data());
++        });
++    }
++}

@@ -86,9 +86,42 @@ class TelegramClient
         return $this->request('editMessageText', $payload);
     }
 
-    /**
-     * Answer callback query
-     */
+    public function editOrSendMessage(
+        int    $chatId,
+        ?int   $messageId,
+        string $text,
+        ?array $inlineKeyboard = null
+    ): array
+    {
+        if ($messageId && $messageId > 0) {
+            $result = $this->editMessageText(
+                $chatId,
+                $messageId,
+                $text,
+                $inlineKeyboard
+            );
+
+            if ($result['ok'] ?? false) {
+                return $result;
+            }
+
+            $description = strtolower($result['description'] ?? '');
+
+            if (str_contains($description, 'message is not modified')) {
+                return [
+                    'ok' => true,
+                    'result' => null,
+                ];
+            }
+        }
+
+        return $this->sendMessage(
+            $chatId,
+            $text,
+            $inlineKeyboard
+        );
+    }
+
     public function answerCallbackQuery(string $callbackQueryId, string $text = '', bool $showAlert = false): array
     {
         $payload = [

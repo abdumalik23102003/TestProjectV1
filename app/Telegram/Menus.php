@@ -29,19 +29,36 @@ class Menus
     /**
      * Main teacher menu
      */
+
     public static function teacherMain(): array
     {
         return [
             'text' => __('bot.teacher_menu'),
             'buttons' => [
-                [Keyboard::button(__('bot.btn_upload'), 'teacher:upload')],
-                [Keyboard::button(__('bot.btn_my_files'), 'teacher:files')],
-                [Keyboard::button(__('bot.btn_search'), 'student:search')],
-                [Keyboard::button(__('bot.btn_profile'), 'menu:profile')],
-                [Keyboard::button(__('bot.btn_help'), 'menu:help')],
+                [
+                    Keyboard::button('📤 Fayl yuklash', 'teacher:upload'),
+                    Keyboard::button('📚 Mening fayllarim', 'teacher:files'),
+                ],
+                [
+                    Keyboard::button('👨‍🎓 O‘quvchilarim', 'teacher:students'),
+                    Keyboard::button('⏳ Yangi so‘rovlar', 'teacher:students_pending'),
+                ],
+                [
+                    Keyboard::button('🔎 Material qidirish', 'teacher:search'),
+                    Keyboard::button('🔗 Taklif havolasi', 'teacher:link'),
+                ],
+                [
+                    Keyboard::button('📊 Statistika', 'teacher:stats'),
+                    Keyboard::button('⚙️ Sozlamalar', 'teacher:settings'),
+                ],
+                [
+                    Keyboard::button('👤 Profilim', 'menu:profile'),
+                    Keyboard::button(__('bot.btn_help'), 'menu:help'),
+                ],
             ],
         ];
     }
+
 
     /**
      * Main student menu

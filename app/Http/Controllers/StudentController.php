@@ -54,21 +54,21 @@ class StudentController extends Controller
 
             $buttons[] = [
                 'text' => "⬇️ " . \Illuminate\Support\Str::limit($material->title, 15),
-                'callback_data' => "download:{$material->id}"
+                'callback_data' => "student:download:{$material->id}"
             ];
         }
 
         if ($results->hasMorePages()) {
             $buttons[] = [
                 'text' => "Keyingi ➡️",
-                'callback_data' => "search:next:" . ($page + 1)
+                'callback_data' => "student:search_next:" . ($page + 1)
             ];
         }
 
         if ($page > 1) {
             $buttons[] = [
                 'text' => "⬅️ Oldingi",
-                'callback_data' => "search:prev:" . ($page - 1)
+                'callback_data' => "student:search_prev:" . ($page - 1)
             ];
         }
 
