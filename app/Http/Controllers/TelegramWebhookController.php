@@ -65,9 +65,40 @@ class TelegramWebhookController extends Controller
                 'file' => $e->getFile(),
                 'line' => $e->getLine(),
             ]);
+
+            $this->notifyProcessingFailure($update);
         }
 
         return response('', 200);
+    }
+
+    /**
+     * Ishlov berishda kutilmagan xato bo'lsa, foydalanuvchi jim qolib ketmasligi uchun
+     * unga qisqa xabar yuboramiz (va callback bo'lsa, tugma "aylanishini" to'xtatamiz).
+     */
+    protected function notifyProcessingFailure(array $update): void
+    {
+        try {
+            $client = new TelegramClient();
+
+            $chatId = $update['message']['chat']['id']
+                ?? $update['callback_query']['message']['chat']['id']
+                ?? null;
+
+            $callbackId = $update['callback_query']['id'] ?? null;
+
+            if ($callbackId !== null) {
+                $client->answerCallbackQuery($callbackId);
+            }
+
+            if ($chatId !== null) {
+                $client->sendMessage((int) $chatId, __('bot.unknown_error'));
+            }
+        } catch (Throwable $e) {
+            Log::error('Webhook failure notice failed', [
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     protected function process(UpdateContext $ctx): void
@@ -165,6 +196,12 @@ class TelegramWebhookController extends Controller
 
                 return;
             }
+
+            // Ustoz fayl qabul qilinganini darhol ko'rsin (yuklab olish biroz vaqt olishi mumkin).
+            $client->sendMessage(
+                $ctx->chatId,
+                __('bot.file_downloading')
+            );
 
             $fileInfo = $client->getFile($ctx->fileId);
 
@@ -298,6 +335,19 @@ class TelegramWebhookController extends Controller
                 app(TeacherController::class)->handleUploadText(
                     $ctx->telegramUserId,
                     $ctx->messageText
+                );
+
+                return;
+            }
+
+            // Ustoz "Fayl yuklash"ni bosdi, lekin fayl o'rniga matn yubordi — jim qolmaymiz.
+            if (
+                $uploadSession &&
+                ($uploadSession['current_step'] ?? '') === 'awaiting_file'
+            ) {
+                $client->sendMessage(
+                    $ctx->chatId,
+                    __('bot.awaiting_file_hint')
                 );
 
                 return;

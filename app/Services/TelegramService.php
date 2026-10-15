@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Telegram\TelegramClient;
 use Illuminate\Support\Facades\Http;
 
 class TelegramService
@@ -15,22 +16,44 @@ class TelegramService
         $this->apiBaseUrl = config('telegram.api_url');
     }
 
+    /**
+     * Xabar yuborish.
+     *
+     * $buttons — yoki tekis tugmalar ro'yxati (2 tadan qatorga bo'linadi),
+     * yoki tayyor qatorlar ro'yxati [[btn, btn], [btn]].
+     *
+     * Barcha so'rovlar TelegramClient orqali ketadi: u Telegram xatolarini
+     * logga yozadi va tokenni maskalaydi.
+     */
     public function sendMessage(int $chatId, string $text, array $buttons = []): array
     {
-        $replyMarkup = [];
+        $keyboard = $this->buildInlineKeyboard($buttons);
 
-        if (!empty($buttons)) {
-            $replyMarkup = ['inline_keyboard' => [array_chunk($buttons, 2)]];
+        return (new TelegramClient())->sendMessage(
+            $chatId,
+            $text,
+            $keyboard !== [] ? $keyboard : null
+        );
+    }
+
+    /**
+     * Tugmalarni Telegram inline_keyboard formatiga (qatorlar ro'yxati) keltiradi.
+     */
+    public function buildInlineKeyboard(array $buttons): array
+    {
+        if ($buttons === []) {
+            return [];
         }
 
-        $response = Http::post("{$this->apiBaseUrl}/bot{$this->botToken}/sendMessage", [
-            'chat_id' => $chatId,
-            'text' => $text,
-            'parse_mode' => 'HTML',
-            'reply_markup' => !empty($replyMarkup) ? json_encode($replyMarkup) : null,
-        ]);
+        $first = reset($buttons);
 
-        return $response->json();
+        // Allaqachon qatorlarga bo'lingan: [[btn, btn], [btn]]
+        if (is_array($first) && !array_key_exists('text', $first)) {
+            return array_values($buttons);
+        }
+
+        // Tekis ro'yxat: [btn, btn, btn] -> [[btn, btn], [btn]]
+        return array_chunk(array_values($buttons), 2);
     }
 
     public function sendDocument(int $chatId, $file, string $filename = 'document'): array
@@ -45,15 +68,11 @@ class TelegramService
 
     public function editMessageReplyMarkup(int $chatId, int $messageId, array $buttons): array
     {
-        $replyMarkup = ['inline_keyboard' => [array_chunk($buttons, 2)]];
-
-        $response = Http::post("{$this->apiBaseUrl}/bot{$this->botToken}/editMessageReplyMarkup", [
-            'chat_id' => $chatId,
-            'message_id' => $messageId,
-            'reply_markup' => json_encode($replyMarkup),
-        ]);
-
-        return $response->json();
+        return (new TelegramClient())->editMessageReplyMarkup(
+            $chatId,
+            $messageId,
+            $this->buildInlineKeyboard($buttons)
+        );
     }
 
     public function answerCallbackQuery(string $callbackQueryId, string $text = '', bool $showAlert = false): array

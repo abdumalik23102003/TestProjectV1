@@ -169,4 +169,8 @@ return [
     'student_removed' => '🗑 O\'quvchi udalindi',
     'student_approved' => '✅ O\'quvchi tasdiqlandi',
     'student_rejected' => '❌ O\'quvchi rad etildi',
+
+    // Upload flow
+    'file_downloading' => '📥 Fayl qabul qilindi, tekshirilmoqda...',
+    'awaiting_file_hint' => '📎 Iltimos, matn emas, fayl yuboring (PDF, DOCX, rasm va h.k.).',
 ];
