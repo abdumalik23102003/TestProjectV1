@@ -6,16 +6,24 @@ use App\Models\User;
 
 class UpdateContext
 {
-
     public int $updateId = 0;
+
     public int $chatId = 0;
+
     public int $telegramUserId = 0;
+
     public int $messageId = 0;
+
     public ?string $messageText = null;
+
     public ?string $callbackData = null;
+
     public ?string $fileId = null;
+
     public ?string $fileType = null;
+
     public ?User $user = null;
+
     public array $rawUpdate = [];
 
     public function __construct(array $update)
@@ -86,7 +94,7 @@ class UpdateContext
      */
     public function getOrCreateUser(): User
     {
-        if (!$this->user) {
+        if (! $this->user) {
             $this->user = User::create([
                 'telegram_user_id' => $this->telegramUserId,
                 'full_name' => '?',

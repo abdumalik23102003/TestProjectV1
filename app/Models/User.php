@@ -2,21 +2,24 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class User extends Model
 {
+    use HasFactory;
+
     protected $fillable = [
         'telegram_user_id',
         'full_name',
         'role',
         'status',
         'teacher_approval_token',
-        'teacher_approved_at'
+        'teacher_approved_at',
     ];
 
     protected $casts = [
-        'teacher_approved_at' => 'datetime'
+        'teacher_approved_at' => 'datetime',
     ];
 
     public function materials()

@@ -3,412 +3,390 @@
 namespace App\Telegram\Handlers;
 
 use App\Models\User;
-use App\Telegram\UpdateContext;
-use App\Telegram\TelegramClient;
-use App\Telegram\Keyboard;
-use App\Telegram\Menus;
-use App\Services\AuditService;
 use App\Services\AdminPanelService;
+use App\Services\AuditService;
+use App\Telegram\Keyboard;
+use App\Telegram\TelegramClient;
+use App\Telegram\UpdateContext;
+use Illuminate\Support\Facades\Lang;
 
+/**
+ * Admin callbacklari: admin:<amal>[:<id>]
+ * Har bir chaqiruvda admin roli va faol holati qayta tekshiriladi.
+ */
 class AdminHandler
 {
+    private bool $answered = false;
+
     public function handle(UpdateContext $ctx, TelegramClient $client, array $parts): void
     {
-        $user = User::where('telegram_user_id', $ctx->telegramUserId)
+        $this->answered = false;
+
+        $admin = User::where('telegram_user_id', $ctx->telegramUserId)
             ->where('role', 'admin')
             ->where('status', 'active')
             ->first();
 
-        if (!$user) {
-            $client->answerCallbackQuery(
-                $this->getCallbackId($ctx),
-                __('bot.unauthorized'),
-                true
-            );
+        if (! $admin) {
+            $this->answer($ctx, $client, __('bot.unauthorized'), true);
+
             return;
         }
 
         $action = $parts[1] ?? null;
+        $id = (int) ($parts[2] ?? 0);
 
         match ($action) {
-            'approve_teachers' => $this->approvePendingTeachers($ctx, $client),
-            'approve_teacher' => $this->approveTeacher($ctx, $client, (int)($parts[2] ?? 0)),
-            'reject_teacher' => $this->rejectTeacher($ctx, $client, (int)($parts[2] ?? 0)),
-            'users' => $this->listUsers($ctx, $client),
-            'users_active' => $this->listActiveUsers($ctx, $client),
-            'users_blocked' => $this->listBlockedUsers($ctx, $client),
-            'user_block' => $this->blockUserMenu($ctx, $client, (int)($parts[2] ?? 0)),
-            'user_unblock' => $this->unblockUser($ctx, $client, (int)($parts[2] ?? 0)),
-            'user_details' => $this->showUserDetails($ctx, $client, (int)($parts[2] ?? 0)),
-            'audit' => $this->viewAuditLog($ctx, $client),
-            'stats' => $this->showStatistics($ctx, $client),
-            default => $client->answerCallbackQuery(
-                $this->getCallbackId($ctx),
-                __('bot.unknown_action')
-            ),
+            'approve_teachers' => $this->pendingTeachers($ctx, $client),
+            'approve_teacher' => $this->approveTeacher($ctx, $client, $admin, $id),
+            'reject_teacher' => $this->rejectTeacher($ctx, $client, $admin, $id),
+            'users' => $this->usersOverview($ctx, $client),
+            'users_active' => $this->usersActive($ctx, $client),
+            'users_blocked' => $this->usersBlocked($ctx, $client),
+            'user_details' => $this->userDetails($ctx, $client, $admin, $id),
+            'user_block' => $this->blockConfirm($ctx, $client, $admin, $id),
+            'user_block_do' => $this->blockDo($ctx, $client, $admin, $id),
+            'user_unblock' => $this->unblock($ctx, $client, $admin, $id),
+            'audit' => $this->audit($ctx, $client),
+            'stats' => $this->stats($ctx, $client),
+            default => $this->answer($ctx, $client, __('bot.unknown_action')),
         };
+
+        // Tugma "aylanib" qolmasligi uchun: hali javob berilmagan bo'lsa, jim javob beramiz.
+        $this->answer($ctx, $client);
     }
 
-    protected function approvePendingTeachers(UpdateContext $ctx, TelegramClient $client): void
+    // ---------------------------------------------------------------- ustozlar
+
+    private function pendingTeachers(UpdateContext $ctx, TelegramClient $client): void
     {
-        $adminService = app(AdminPanelService::class);
-        $pending = $adminService->getPendingTeachers(20);
+        $pending = $this->panel()->getPendingTeachers(20);
 
         if ($pending->isEmpty()) {
-            $client->sendMessage($ctx->chatId, __('bot.no_pending'));
+            $this->show($ctx, $client, __('bot.no_pending'), [[Keyboard::button(__('bot.btn_back'), 'menu:main')]]);
+
             return;
         }
 
-        $text = "⏳ <b>Tasdiqqa Kutayotgan Ustozlar</b> ({$pending->count()} ta)\n\n";
+        $text = __('bot.admin_title_pending', ['count' => $pending->count()])."\n\n";
+        $buttons = [];
 
-        $keyboard = [];
         foreach ($pending as $teacher) {
-            $text .= "• {$teacher->full_name}\n";
-            $keyboard[] = [
-                Keyboard::button(
-                    '✅ ' . $teacher->full_name,
-                    'admin:approve_teacher:' . $teacher->id
-                ),
+            $text .= '• '.e($teacher->full_name)."\n";
+            $buttons[] = [
+                Keyboard::button('✅ '.$this->short($teacher->full_name), 'admin:approve_teacher:'.$teacher->id),
+                Keyboard::button('❌', 'admin:reject_teacher:'.$teacher->id),
             ];
         }
 
-        $keyboard[] = [Keyboard::button(__('bot.btn_back'), 'menu:main')];
+        $buttons[] = [Keyboard::button(__('bot.btn_back'), 'menu:main')];
 
-        $client->sendMessage($ctx->chatId, $text, $keyboard);
+        $this->show($ctx, $client, $text, $buttons);
     }
 
-    protected function approveTeacher(
-        UpdateContext  $ctx,
-        TelegramClient $client,
-        int            $teacherId
-    ): void
+    private function approveTeacher(UpdateContext $ctx, TelegramClient $client, User $admin, int $id): void
     {
-        $teacher = User::where('id', $teacherId)
-            ->where('role', 'teacher')
-            ->where('status', 'pending')
-            ->first();
+        $teacher = $this->pendingTeacher($id);
 
-        if (!$teacher) {
-            $client->answerCallbackQuery(
-                $this->getCallbackId($ctx),
-                __('bot.teacher_not_found'),
-                true
-            );
+        if (! $teacher) {
+            $this->answer($ctx, $client, __('bot.teacher_not_found'), true);
+            $this->pendingTeachers($ctx, $client);
+
             return;
         }
 
-        $adminService = app(AdminPanelService::class);
-        $adminService->approveTeacher($teacher);
+        $this->panel()->approveTeacher($teacher);
+        $this->audit()->logTeacherApproved($admin, $teacher);
 
-        // Log approval
-        $admin = User::where('telegram_user_id', $ctx->telegramUserId)->first();
-        if ($admin) {
-            app(AuditService::class)->logTeacherApproved($admin, $teacher);
-        }
+        $this->answer($ctx, $client, __('bot.teacher_approved'));
+        $client->sendMessage($teacher->telegram_user_id, __('bot.notice_teacher_approved'));
 
-        $client->answerCallbackQuery($this->getCallbackId($ctx), __('bot.teacher_approved'));
-
-        // Notify admin
-        $client->sendMessage(
-            $ctx->chatId,
-            "✅ <b>{$teacher->full_name}</b> tasdiqlandi."
-        );
-
-        // Notify teacher
-        $client->sendMessage(
-            $teacher->telegram_user_id,
-            "✅ Tabriklaymiz! Sizning ustozlik akkauntingiz tasdiqlandi. /start bosing."
-        );
+        $this->pendingTeachers($ctx, $client);
     }
 
-    protected function rejectTeacher(
-        UpdateContext $ctx,
-        TelegramClient $client,
-        int $teacherId
-    ): void
+    private function rejectTeacher(UpdateContext $ctx, TelegramClient $client, User $admin, int $id): void
     {
-        $teacher = User::where('id', $teacherId)
-            ->where('role', 'teacher')
-            ->where('status', 'pending')
-            ->first();
+        $teacher = $this->pendingTeacher($id);
 
-        if (!$teacher) {
-            $client->answerCallbackQuery(
-                $this->getCallbackId($ctx),
-                __('bot.teacher_not_found'),
-                true
-            );
+        if (! $teacher) {
+            $this->answer($ctx, $client, __('bot.teacher_not_found'), true);
+            $this->pendingTeachers($ctx, $client);
+
             return;
         }
 
-        $adminService = app(AdminPanelService::class);
-        $adminService->rejectTeacher($teacher, 'Admin tomonidan rad etildi');
+        $this->panel()->rejectTeacher($teacher, 'admin_decision');
+        $this->audit()->logTeacherRejected($admin, $teacher, 'admin_decision');
 
-        // Log rejection
-        $admin = User::where('telegram_user_id', $ctx->telegramUserId)->first();
-        if ($admin) {
-            app(AuditService::class)->logTeacherRejected($admin, $teacher, 'Admin decision');
-        }
+        $this->answer($ctx, $client, __('bot.teacher_rejected'));
+        $client->sendMessage($teacher->telegram_user_id, __('bot.notice_teacher_rejected'));
 
-        $client->answerCallbackQuery($this->getCallbackId($ctx), __('bot.teacher_rejected'));
-
-        // Notify admin
-        $client->sendMessage(
-            $ctx->chatId,
-            "❌ <b>{$teacher->full_name}</b> rad etildi."
-        );
-
-        // Notify teacher
-        $client->sendMessage(
-            $teacher->telegram_user_id,
-            "❌ Uzur, sizning ustozlik talabingiz rad etildi. Qayta urinishni xohlaysizmi? /start bosing."
-        );
+        $this->pendingTeachers($ctx, $client);
     }
 
-    protected function listUsers(UpdateContext $ctx, TelegramClient $client): void
+    private function pendingTeacher(int $id): ?User
     {
-        $adminService = app(AdminPanelService::class);
-        $stats = $adminService->getUserStats();
+        return User::where('id', $id)
+            ->where('role', 'teacher')
+            ->where('status', 'pending')
+            ->first();
+    }
 
-        $text = "👥 <b>Foydalanuvchilar Statistikasi</b>\n\n";
-        $text .= "📊 <b>Jami:</b> {$stats['total']} ta\n";
-        $text .= "✅ <b>Faol:</b> {$stats['active']} ta\n";
-        $text .= "⏳ <b>Kutilmoqda:</b> {$stats['pending']} ta\n";
-        $text .= "🚫 <b>Bloklandi:</b> {$stats['blocked']} ta\n\n";
-        $text .= "👨‍🏫 <b>Ustozlar:</b> {$stats['teachers']} ta\n";
-        $text .= "🎓 <b>O'quvchilar:</b> {$stats['students']} ta\n";
-        $text .= "👤 <b>Adminlar:</b> {$stats['admins']} ta\n";
+    // ------------------------------------------------------- foydalanuvchilar
 
-        $buttons = [
-            [Keyboard::button('✅ Faol', 'admin:users_active')],
-            [Keyboard::button('🚫 Bloklandi', 'admin:users_blocked')],
+    private function usersOverview(UpdateContext $ctx, TelegramClient $client): void
+    {
+        $stats = $this->panel()->getUserStats();
+
+        $text = __('bot.admin_title_users')."\n\n".__('bot.admin_users_summary', $stats);
+
+        $this->show($ctx, $client, $text, [
+            [Keyboard::button('✅ '.__('bot.status_active'), 'admin:users_active')],
+            [Keyboard::button('🚫 '.__('bot.status_blocked'), 'admin:users_blocked')],
+            [Keyboard::button(__('bot.btn_pending_teachers'), 'admin:approve_teachers')],
             [Keyboard::button(__('bot.btn_back'), 'menu:main')],
-        ];
-
-        $client->editMessageText($ctx->chatId, $ctx->messageId, $text, $buttons);
+        ]);
     }
 
-    protected function listActiveUsers(UpdateContext $ctx, TelegramClient $client): void
+    private function usersActive(UpdateContext $ctx, TelegramClient $client): void
     {
-        $adminService = app(AdminPanelService::class);
-        $users = $adminService->getActiveUsers(15);
+        $users = $this->panel()->getActiveUsers(15);
+
+        $this->showUserList($ctx, $client, $users, 'bot.admin_title_active');
+    }
+
+    private function usersBlocked(UpdateContext $ctx, TelegramClient $client): void
+    {
+        $users = $this->panel()->getBlockedUsers(15);
 
         if ($users->isEmpty()) {
-            $client->editMessageText(
-                $ctx->chatId,
-                $ctx->messageId,
-                __('bot.no_results')
-            );
+            $this->show($ctx, $client, __('bot.no_blocked_users'), [[Keyboard::button(__('bot.btn_back'), 'admin:users')]]);
+
             return;
         }
 
-        $text = "✅ <b>Faol Foydalanuvchilar</b> ({$users->count()} ta)\n\n";
-        $text .= $adminService->formatUsersList($users);
-
-        $buttons = [
-            [Keyboard::button(__('bot.btn_back'), 'admin:users')],
-        ];
-
-        $client->editMessageText($ctx->chatId, $ctx->messageId, $text, $buttons);
+        $this->showUserList($ctx, $client, $users, 'bot.admin_title_blocked');
     }
 
-    protected function listBlockedUsers(UpdateContext $ctx, TelegramClient $client): void
+    private function showUserList(UpdateContext $ctx, TelegramClient $client, $users, string $titleKey): void
     {
-        $adminService = app(AdminPanelService::class);
-        $users = $adminService->getBlockedUsers(15);
-
         if ($users->isEmpty()) {
-            $client->sendMessage($ctx->chatId, __('bot.no_blocked_users'));
+            $this->show($ctx, $client, __('bot.no_results'), [[Keyboard::button(__('bot.btn_back'), 'admin:users')]]);
+
             return;
         }
 
-        $text = "🚫 <b>Bloklangan Foydalanuvchilar</b> ({$users->count()} ta)\n\n";
-        $text .= $adminService->formatUsersList($users);
+        $text = __($titleKey, ['count' => $users->count()])."\n\n".$this->panel()->formatUsersList($users);
 
         $buttons = [];
+
         foreach ($users as $user) {
-            $buttons[] = [
-                Keyboard::button(
-                    '✅ ' . $user->full_name,
-                    'admin:user_unblock:' . $user->id
-                ),
-            ];
+            $buttons[] = [Keyboard::button('ℹ️ '.$this->short($user->full_name), 'admin:user_details:'.$user->id)];
         }
+
         $buttons[] = [Keyboard::button(__('bot.btn_back'), 'admin:users')];
 
-        $client->sendMessage($ctx->chatId, $text, $buttons);
+        $this->show($ctx, $client, $text, $buttons);
     }
 
-    protected function blockUserMenu(
-        UpdateContext $ctx,
-        TelegramClient $client,
-        int $userId
-    ): void
+    private function userDetails(UpdateContext $ctx, TelegramClient $client, User $admin, int $id): void
     {
-        $adminService = app(AdminPanelService::class);
-        $user = $adminService->getUserById($userId);
+        $user = $this->panel()->getUserById($id);
 
-        if (!$user) {
-            $client->answerCallbackQuery(
-                $this->getCallbackId($ctx),
-                __('bot.user_not_found'),
-                true
-            );
+        if (! $user) {
+            $this->answer($ctx, $client, __('bot.user_not_found'), true);
+
             return;
         }
+
+        $text = __('bot.admin_user_card', [
+            'name' => e($user->full_name),
+            'tid' => $user->telegram_user_id,
+            'role' => $this->roleLabel($user->role),
+            'status' => __("bot.status_{$user->status}"),
+            'date' => $user->created_at->format('d.m.Y H:i'),
+        ]);
+
+        $buttons = [];
 
         if ($user->status === 'blocked') {
-            $client->answerCallbackQuery(
-                $this->getCallbackId($ctx),
-                __('bot.user_already_blocked'),
-                true
-            );
-            return;
+            $buttons[] = [Keyboard::button(__('bot.btn_unblock'), 'admin:user_unblock:'.$user->id)];
+        } elseif ($this->panel()->cannotBlockReason($admin, $user) === null) {
+            $buttons[] = [Keyboard::button(__('bot.btn_block'), 'admin:user_block:'.$user->id)];
         }
 
-        $adminService->blockUser($user);
+        $buttons[] = [Keyboard::button(__('bot.btn_back'), 'admin:users')];
 
-        // Log block
-        $admin = User::where('telegram_user_id', $ctx->telegramUserId)->first();
-        if ($admin) {
-            app(AuditService::class)->logUserBlocked($admin, $user, 'Admin decision');
-        }
-
-        $client->answerCallbackQuery($this->getCallbackId($ctx), __('bot.user_blocked'));
-
-        $client->sendMessage(
-            $ctx->chatId,
-            "🚫 <b>{$user->full_name}</b> bloklandi."
-        );
+        $this->show($ctx, $client, $text, $buttons);
     }
 
-    protected function unblockUser(
-        UpdateContext $ctx,
-        TelegramClient $client,
-        int $userId
-    ): void
+    private function blockConfirm(UpdateContext $ctx, TelegramClient $client, User $admin, int $id): void
     {
-        $adminService = app(AdminPanelService::class);
-        $user = $adminService->getUserById($userId);
+        $user = $this->panel()->getUserById($id);
 
-        if (!$user) {
-            $client->answerCallbackQuery(
-                $this->getCallbackId($ctx),
-                __('bot.user_not_found'),
-                true
-            );
+        if (! $user) {
+            $this->answer($ctx, $client, __('bot.user_not_found'), true);
+
             return;
         }
 
-        $adminService->unblockUser($user);
+        if ($reason = $this->panel()->cannotBlockReason($admin, $user)) {
+            $this->answer($ctx, $client, __($reason), true);
 
-        // Log unblock
-        $admin = User::where('telegram_user_id', $ctx->telegramUserId)->first();
-        if ($admin) {
-            app(AuditService::class)->logUserUnblocked($admin, $user);
-        }
-
-        $client->answerCallbackQuery($this->getCallbackId($ctx), __('bot.user_unblocked'));
-
-        $client->sendMessage(
-            $ctx->chatId,
-            "✅ <b>{$user->full_name}</b> blokdan chiqarildi."
-        );
-    }
-
-    protected function showUserDetails(
-        UpdateContext $ctx,
-        TelegramClient $client,
-        int $userId
-    ): void
-    {
-        $adminService = app(AdminPanelService::class);
-        $user = $adminService->getUserById($userId);
-
-        if (!$user) {
-            $client->sendMessage($ctx->chatId, __('bot.user_not_found'));
             return;
         }
 
-        $text = "👤 <b>Foydalanuvchi Tafsilotlari</b>\n\n";
-        $text .= "<b>Ism:</b> {$user->full_name}\n";
-        $text .= "<b>Telegram ID:</b> {$user->telegram_user_id}\n";
-        $text .= "<b>Rol:</b> {$user->role}\n";
-        $text .= "<b>Status:</b> " . __("bot.status_{$user->status}") . "\n";
-        $text .= "<b>Ro'yxatdan o'tish:</b> {$user->created_at->format('d.m.Y H:i')}\n";
-
-        $buttons = [
+        $this->show($ctx, $client, __('bot.admin_block_confirm', ['name' => e($user->full_name)]), [
             [
-                Keyboard::button('ℹ️ Tafsilot', 'admin:user_details:' . $user->id),
-                Keyboard::button(__('bot.btn_back'), 'admin:users'),
+                Keyboard::button(__('bot.btn_block_yes'), 'admin:user_block_do:'.$user->id),
+                Keyboard::button(__('bot.btn_cancel_no'), 'admin:user_details:'.$user->id),
             ],
-        ];
+        ]);
+    }
+
+    private function blockDo(UpdateContext $ctx, TelegramClient $client, User $admin, int $id): void
+    {
+        $user = $this->panel()->getUserById($id);
+
+        if (! $user) {
+            $this->answer($ctx, $client, __('bot.user_not_found'), true);
+
+            return;
+        }
+
+        if ($reason = $this->panel()->cannotBlockReason($admin, $user)) {
+            $this->answer($ctx, $client, __($reason), true);
+
+            return;
+        }
+
+        $this->panel()->blockUser($user, 'admin_decision');
+        $this->audit()->logUserBlocked($admin, $user, 'admin_decision');
+
+        $this->answer($ctx, $client, __('bot.user_blocked'));
+        $client->sendMessage($user->telegram_user_id, __('bot.blocked_user'));
+
+        $this->userDetails($ctx, $client, $admin, $user->id);
+    }
+
+    private function unblock(UpdateContext $ctx, TelegramClient $client, User $admin, int $id): void
+    {
+        $user = $this->panel()->getUserById($id);
+
+        if (! $user) {
+            $this->answer($ctx, $client, __('bot.user_not_found'), true);
+
+            return;
+        }
 
         if ($user->status !== 'blocked') {
-            $buttons[] = [Keyboard::button(__('bot.btn_block'), 'admin:user_block:' . $user->id)];
-        } else {
-            $buttons[] = [Keyboard::button(__('bot.btn_unblock'), 'admin:user_unblock:' . $user->id)];
-        }
+            $this->answer($ctx, $client, __('bot.unknown_action'), true);
 
-        $client->sendMessage($ctx->chatId, $text, $buttons);
-    }
-
-    protected function viewAuditLog(UpdateContext $ctx, TelegramClient $client): void
-    {
-        $logs = app(AuditService::class)->getLatest(10);
-
-        if ($logs->isEmpty()) {
-            $client->editMessageText(
-                $ctx->chatId,
-                $ctx->messageId,
-                "💻 " . __('bot.no_audit_logs')
-            );
             return;
         }
 
-        $text = "💾 <b>Oxirgi Audit Loglar</b>\n\n";
+        $this->panel()->unblockUser($user);
+        $this->audit()->logUserUnblocked($admin, $user);
 
-        foreach ($logs as $log) {
-            $text .= app(AuditService::class)->formatForDisplay($log) . "\n";
-        }
+        $this->answer($ctx, $client, __('bot.user_unblocked'));
+        $client->sendMessage($user->telegram_user_id, __('bot.notice_user_unblocked'));
 
-        $buttons = [
-            [Keyboard::button(__('bot.btn_back'), 'menu:main')],
-        ];
-
-        $client->editMessageText($ctx->chatId, $ctx->messageId, $text, $buttons);
+        $this->userDetails($ctx, $client, $admin, $user->id);
     }
 
-    protected function showStatistics(UpdateContext $ctx, TelegramClient $client): void
+    // ------------------------------------------------------- audit va statistika
+
+    private function audit(): AuditService
     {
-        $adminService = app(AdminPanelService::class);
-        $stats = $adminService->getSystemStats();
+        return app(AuditService::class);
+    }
 
-        $text = "📊 <b>Sistema Statistikasi</b>\n\n";
-        $text .= "<b>Foydalanuvchilar:</b>\n";
-        $text .= "  • Jami: {$stats['users']['total']}\n";
-        $text .= "  • Faol: {$stats['users']['active']}\n";
-        $text .= "  • Kutilmoqda: {$stats['users']['pending']}\n";
-        $text .= "  • Bloklandi: {$stats['users']['blocked']}\n\n";
-        $text .= "<b>Materiallar:</b> {$stats['total_materials']} ta\n";
-        $text .= "<b>Audit Loglar:</b> {$stats['total_audit_logs']} ta\n";
+    private function auditView(UpdateContext $ctx, TelegramClient $client): void
+    {
+        $logs = $this->audit()->getLatest(10);
 
-        if (!empty($stats['audit_actions_7days'])) {
-            $text .= "\n<b>Oxirgi 7 kunlik Amallar:</b>\n";
+        if ($logs->isEmpty()) {
+            $this->show($ctx, $client, __('bot.no_audit_logs'), [[Keyboard::button(__('bot.btn_back'), 'menu:main')]]);
+
+            return;
+        }
+
+        $text = __('bot.admin_title_audit')."\n\n";
+
+        foreach ($logs as $log) {
+            $text .= $this->audit()->formatForDisplay($log)."\n";
+        }
+
+        $this->show($ctx, $client, $text, [[Keyboard::button(__('bot.btn_back'), 'menu:main')]]);
+    }
+
+    private function stats(UpdateContext $ctx, TelegramClient $client): void
+    {
+        $stats = $this->panel()->getSystemStats();
+
+        $text = __('bot.admin_title_stats')."\n\n".__('bot.admin_stats_body', [
+            'users_total' => $stats['users']['total'],
+            'users_active' => $stats['users']['active'],
+            'users_pending' => $stats['users']['pending'],
+            'users_blocked' => $stats['users']['blocked'],
+            'materials' => $stats['total_materials'],
+            'audits' => $stats['total_audit_logs'],
+        ]);
+
+        if (! empty($stats['audit_actions_7days'])) {
+            $text .= "\n\n".__('bot.admin_stats_week')."\n";
+
             foreach ($stats['audit_actions_7days'] as $action => $count) {
-                $text .= "  • {$action}: {$count}\n";
+                $key = "bot.audit_action_{$action}";
+                $label = Lang::has($key) ? __($key) : e($action);
+                $text .= "• {$label}: {$count}\n";
             }
         }
 
-        $buttons = [
-            [Keyboard::button(__('bot.btn_back'), 'menu:main')],
-        ];
-
-        $client->sendMessage($ctx->chatId, $text, $buttons);
+        $this->show($ctx, $client, $text, [[Keyboard::button(__('bot.btn_back'), 'menu:main')]]);
     }
 
-    protected function getCallbackId(UpdateContext $ctx): string
+    // ---------------------------------------------------------------- yordamchi
+
+    private function panel(): AdminPanelService
     {
-        return $ctx->rawUpdate['callback_query']['id'] ?? '';
+        return app(AdminPanelService::class);
+    }
+
+    private function show(UpdateContext $ctx, TelegramClient $client, string $text, array $buttons): void
+    {
+        $client->editOrSendMessage($ctx->chatId, $ctx->messageId, $text, $buttons);
+    }
+
+    /**
+     * Callbackka bir marta javob beradi. Faqat to'g'ridan-to'g'ri "admin:" tugmalari uchun:
+     * "menu:" orqali kelganlarga MenuHandler o'zi javob beradi.
+     */
+    private function answer(UpdateContext $ctx, TelegramClient $client, string $text = '', bool $alert = false): void
+    {
+        if ($this->answered || ! str_starts_with((string) $ctx->callbackData, 'admin:')) {
+            return;
+        }
+
+        $callbackId = $ctx->rawUpdate['callback_query']['id'] ?? '';
+
+        if ($callbackId === '') {
+            return;
+        }
+
+        $this->answered = true;
+        $client->answerCallbackQuery($callbackId, $text, $alert);
+    }
+
+    private function roleLabel(string $role): string
+    {
+        $key = "bot.admin_role_{$role}";
+
+        return Lang::has($key) ? __($key) : e($role);
+    }
+
+    private function short(string $name): string
+    {
+        return mb_strimwidth($name, 0, 28, '…');
     }
 }

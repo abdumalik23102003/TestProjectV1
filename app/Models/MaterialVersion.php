@@ -14,12 +14,12 @@ class MaterialVersion extends Model
         'checksum',
         'uploaded_at',
         'status',
-        'retain_until'
+        'retain_until',
     ];
 
     protected $casts = [
         'uploaded_at' => 'datetime',
-        'retain_until' => 'datetime'
+        'retain_until' => 'datetime',
     ];
 
     public function material()

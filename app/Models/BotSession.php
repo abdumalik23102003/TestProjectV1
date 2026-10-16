@@ -11,11 +11,11 @@ class BotSession extends Model
         'process_type',
         'current_step',
         'payload',
-        'expires_at'
+        'expires_at',
     ];
 
     protected $casts = [
         'payload' => 'json',
-        'expires_at' => 'datetime'
+        'expires_at' => 'datetime',
     ];
 }

@@ -2,13 +2,20 @@
 
 namespace App\Helpers;
 
-function formatBytes(int $bytes, int $precision = 2): string
+class FormatHelper
 {
-    $units = ['B', 'KB', 'MB', 'GB', 'TB'];
-    
-    for ($i = 0; $bytes > 1024 && $i < count($units) - 1; $i++) {
-        $bytes /= 1024;
+    /**
+     * Baytlarni o'qilishi oson ko'rinishga o'tkazadi: 2048 -> "2 KB".
+     */
+    public static function bytes(int|float $bytes, int $precision = 2): string
+    {
+        if ($bytes <= 0) {
+            return '0 B';
+        }
+
+        $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        $power = min((int) floor(log($bytes, 1024)), count($units) - 1);
+
+        return round($bytes / (1024 ** $power), $precision).' '.$units[$power];
     }
-    
-    return round($bytes, $precision) . ' ' . $units[$i];
 }

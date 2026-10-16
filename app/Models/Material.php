@@ -19,7 +19,7 @@ class Material extends Model
         'size_bytes',
         'mime_type',
         'checksum',
-        'current_version_id'
+        'current_version_id',
     ];
 
     public function teacher()

@@ -3,33 +3,29 @@
 namespace App\Services;
 
 use App\Telegram\TelegramClient;
-use Illuminate\Support\Facades\Http;
 
+/**
+ * Controllerlar uchun yupqa qobiq. Barcha so'rovlar TelegramClient orqali ketadi:
+ * u xatolarni loglaydi, tokenni maskalaydi va timeout o'rnatadi.
+ */
 class TelegramService
 {
-    protected string $botToken;
-    protected string $apiBaseUrl;
+    protected TelegramClient $client;
 
-    public function __construct()
+    public function __construct(?TelegramClient $client = null)
     {
-        $this->botToken = config('telegram.bot_token');
-        $this->apiBaseUrl = config('telegram.api_url');
+        $this->client = $client ?? new TelegramClient;
     }
 
     /**
-     * Xabar yuborish.
-     *
      * $buttons — yoki tekis tugmalar ro'yxati (2 tadan qatorga bo'linadi),
      * yoki tayyor qatorlar ro'yxati [[btn, btn], [btn]].
-     *
-     * Barcha so'rovlar TelegramClient orqali ketadi: u Telegram xatolarini
-     * logga yozadi va tokenni maskalaydi.
      */
     public function sendMessage(int $chatId, string $text, array $buttons = []): array
     {
         $keyboard = $this->buildInlineKeyboard($buttons);
 
-        return (new TelegramClient())->sendMessage(
+        return $this->client->sendMessage(
             $chatId,
             $text,
             $keyboard !== [] ? $keyboard : null
@@ -48,7 +44,7 @@ class TelegramService
         $first = reset($buttons);
 
         // Allaqachon qatorlarga bo'lingan: [[btn, btn], [btn]]
-        if (is_array($first) && !array_key_exists('text', $first)) {
+        if (is_array($first) && ! array_key_exists('text', $first)) {
             return array_values($buttons);
         }
 
@@ -58,17 +54,12 @@ class TelegramService
 
     public function sendDocument(int $chatId, $file, string $filename = 'document'): array
     {
-        $response = Http::attach('document', $file, $filename)
-            ->post("{$this->apiBaseUrl}/bot{$this->botToken}/sendDocument", [
-                'chat_id' => $chatId,
-            ]);
-
-        return $response->json();
+        return $this->client->sendDocument($chatId, $file, $filename);
     }
 
     public function editMessageReplyMarkup(int $chatId, int $messageId, array $buttons): array
     {
-        return (new TelegramClient())->editMessageReplyMarkup(
+        return $this->client->editMessageReplyMarkup(
             $chatId,
             $messageId,
             $this->buildInlineKeyboard($buttons)
@@ -77,51 +68,6 @@ class TelegramService
 
     public function answerCallbackQuery(string $callbackQueryId, string $text = '', bool $showAlert = false): array
     {
-        $response = Http::post("{$this->apiBaseUrl}/bot{$this->botToken}/answerCallbackQuery", [
-            'callback_query_id' => $callbackQueryId,
-            'text' => $text,
-            'show_alert' => $showAlert,
-        ]);
-
-        return $response->json();
-    }
-
-    public function getFile(string $fileId): array
-    {
-        $response = Http::get("{$this->apiBaseUrl}/bot{$this->botToken}/getFile", [
-            'file_id' => $fileId,
-        ]);
-
-        return $response->json();
-    }
-
-    public function downloadFile(string $filePath): string
-    {
-        $response = Http::get("{$this->apiBaseUrl}/file/bot{$this->botToken}/{$filePath}");
-
-        return $response->body();
-    }
-
-    public function setWebhook(string $url): array
-    {
-        $response = Http::post("{$this->apiBaseUrl}/bot{$this->botToken}/setWebhook", [
-            'url' => $url,
-        ]);
-
-        return $response->json();
-    }
-
-    public function deleteWebhook(): array
-    {
-        $response = Http::post("{$this->apiBaseUrl}/bot{$this->botToken}/deleteWebhook");
-
-        return $response->json();
-    }
-
-    public function getWebhookInfo(): array
-    {
-        $response = Http::get("{$this->apiBaseUrl}/bot{$this->botToken}/getWebhookInfo");
-
-        return $response->json();
+        return $this->client->answerCallbackQuery($callbackQueryId, $text, $showAlert);
     }
 }

@@ -16,7 +16,7 @@ return new class extends Migration
             $table->timestamp('blocked_at');
             $table->timestamp('unblock_at')->nullable();
             $table->timestamps();
-            
+
             $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');
             $table->foreign('blocked_by_admin_id')->references('id')->on('users')->onDelete('set null');
         });

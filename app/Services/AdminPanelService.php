@@ -2,18 +2,17 @@
 
 namespace App\Services;
 
+use App\Models\AuditLog;
+use App\Models\Material;
 use App\Models\User;
+use App\Support\LikeEscape;
 use Illuminate\Database\Eloquent\Collection;
 
 /**
- * Admin panel management service
- * Provides statistics and management functions for admin dashboard
+ * Admin paneli uchun foydalanuvchilarni boshqarish va statistika.
  */
 class AdminPanelService
 {
-    /**
-     * Get all pending teachers
-     */
     public function getPendingTeachers(int $limit = 50): Collection
     {
         return User::where('role', 'teacher')
@@ -23,19 +22,11 @@ class AdminPanelService
             ->get();
     }
 
-    /**
-     * Get count of pending teachers
-     */
     public function getPendingTeachersCount(): int
     {
-        return User::where('role', 'teacher')
-            ->where('status', 'pending')
-            ->count();
+        return User::where('role', 'teacher')->where('status', 'pending')->count();
     }
 
-    /**
-     * Get all active users
-     */
     public function getActiveUsers(int $limit = 50): Collection
     {
         return User::where('status', 'active')
@@ -44,18 +35,11 @@ class AdminPanelService
             ->get();
     }
 
-    /**
-     * Get count of active users
-     */
     public function getActiveUsersCount(): int
     {
-        return User::where('status', 'active')
-            ->count();
+        return User::where('status', 'active')->count();
     }
 
-    /**
-     * Get all blocked users
-     */
     public function getBlockedUsers(int $limit = 50): Collection
     {
         return User::where('status', 'blocked')
@@ -64,18 +48,11 @@ class AdminPanelService
             ->get();
     }
 
-    /**
-     * Get count of blocked users
-     */
     public function getBlockedUsersCount(): int
     {
-        return User::where('status', 'blocked')
-            ->count();
+        return User::where('status', 'blocked')->count();
     }
 
-    /**
-     * Get users by role
-     */
     public function getUsersByRole(string $role, int $limit = 50): Collection
     {
         return User::where('role', $role)
@@ -84,18 +61,11 @@ class AdminPanelService
             ->get();
     }
 
-    /**
-     * Get count of users by role
-     */
     public function getUsersCountByRole(string $role): int
     {
-        return User::where('role', $role)
-            ->count();
+        return User::where('role', $role)->count();
     }
 
-    /**
-     * Get user statistics
-     */
     public function getUserStats(): array
     {
         return [
@@ -110,30 +80,52 @@ class AdminPanelService
     }
 
     /**
-     * Block user
+     * Admin $actor foydalanuvchi $target ni bloklay olmasa, sababning til kalitini qaytaradi.
      */
-    public function blockUser(User $user, string $reason = null): User
+    public function cannotBlockReason(User $actor, User $target): ?string
+    {
+        if ($actor->id === $target->id) {
+            return 'bot.admin_cannot_block_self';
+        }
+
+        if ($target->role === 'admin') {
+            return 'bot.admin_cannot_block_admin';
+        }
+
+        if ($target->status === 'blocked') {
+            return 'bot.user_already_blocked';
+        }
+
+        return null;
+    }
+
+    /**
+     * Foydalanuvchini bloklaydi va uning ochiq wizard sessiyalarini tozalaydi.
+     */
+    public function blockUser(User $user, ?string $reason = null): User
     {
         $user->status = 'blocked';
         $user->save();
 
+        SessionService::clearSession($user->telegram_user_id);
+
         return $user;
     }
 
     /**
-     * Unblock user
+     * Blokdan chiqaradi. Hech qachon tasdiqlanmagan ustoz "pending" holatiga qaytadi
+     * (blok orqali tasdiqlashni aylanib o'tib bo'lmasligi uchun), qolganlar "active".
      */
     public function unblockUser(User $user): User
     {
-        $user->status = 'active';
+        $needsApproval = $user->role === 'teacher' && $user->teacher_approved_at === null;
+
+        $user->status = $needsApproval ? 'pending' : 'active';
         $user->save();
 
         return $user;
     }
 
-    /**
-     * Approve teacher
-     */
     public function approveTeacher(User $teacher): User
     {
         $teacher->status = 'active';
@@ -143,10 +135,7 @@ class AdminPanelService
         return $teacher;
     }
 
-    /**
-     * Reject teacher
-     */
-    public function rejectTeacher(User $teacher, string $reason = null): User
+    public function rejectTeacher(User $teacher, ?string $reason = null): User
     {
         $teacher->status = 'rejected';
         $teacher->save();
@@ -154,41 +143,27 @@ class AdminPanelService
         return $teacher;
     }
 
-    /**
-     * Get user by ID
-     */
     public function getUserById(int $id): ?User
     {
         return User::find($id);
     }
 
-    /**
-     * Get user by telegram ID
-     */
     public function getUserByTelegramId(int $telegramUserId): ?User
     {
         return User::where('telegram_user_id', $telegramUserId)->first();
     }
 
-    /**
-     * Search users by name
-     */
     public function searchUsers(string $query, int $limit = 50): Collection
     {
-        return User::where('full_name', 'like', "%{$query}%")
+        return User::where('full_name', 'like', LikeEscape::contains($query))
             ->orderBy('full_name')
             ->limit($limit)
             ->get();
     }
 
-    /**
-     * Format user for display
-     */
     public function formatUserForDisplay(User $user): string
     {
-        $role = $user->role;
-        $status = $user->status;
-        $icon = match ($status) {
+        $icon = match ($user->status) {
             'active' => '✅',
             'pending' => '⏳',
             'rejected' => '❌',
@@ -196,12 +171,9 @@ class AdminPanelService
             default => '❓',
         };
 
-        return "{$icon} {$user->full_name} ({$role}) - ID: {$user->id}";
+        return "{$icon} ".e($user->full_name)." ({$user->role}) - ID: {$user->id}";
     }
 
-    /**
-     * Format users list for display
-     */
     public function formatUsersList(Collection $users): string
     {
         if ($users->isEmpty()) {
@@ -209,25 +181,21 @@ class AdminPanelService
         }
 
         $text = '';
+
         foreach ($users as $user) {
-            $text .= $this->formatUserForDisplay($user) . "\n";
+            $text .= $this->formatUserForDisplay($user)."\n";
         }
 
         return $text;
     }
 
-    /**
-     * Get system statistics
-     */
     public function getSystemStats(): array
     {
-        $auditService = app(AuditService::class);
-
         return [
             'users' => $this->getUserStats(),
-            'audit_actions_7days' => $auditService->getStats(7),
-            'total_materials' => \App\Models\Material::count(),
-            'total_audit_logs' => \App\Models\AuditLog::count(),
+            'audit_actions_7days' => app(AuditService::class)->getStats(7),
+            'total_materials' => Material::count(),
+            'total_audit_logs' => AuditLog::count(),
         ];
     }
 }

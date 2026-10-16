@@ -1,19 +1,12 @@
 <?php
 
+use App\Models\BotSession;
 use Illuminate\Support\Facades\Schedule;
 
-Schedule::call(function () {
-    \App\Models\BotSession::where('expires_at', '<', now())->delete();
-})->everyMinute();
+// Muddati tugagan wizard sessiyalari
+Schedule::call(fn () => BotSession::where('expires_at', '<', now())->delete())
+    ->name('bot-sessions-cleanup')
+    ->everyMinute();
 
-Schedule::call(function () {
-    \App\Models\MaterialVersion::where('status', 'retained')
-        ->where('retain_until', '<', now())
-        ->delete();
-})->daily();
-
-Schedule::call(function () {
-    \App\Models\Material::where('status', 'archived')
-        ->where('updated_at', '<', now()->subDays(30))
-        ->delete();
-})->daily();
+// Yetim fayllar va eskirgan arxiv
+Schedule::command('materials:cleanup')->hourly();

@@ -16,7 +16,7 @@ return new class extends Migration
             $table->timestamp('requested_at');
             $table->timestamp('approved_at')->nullable();
             $table->timestamps();
-            
+
             $table->foreign('teacher_id')->references('id')->on('users')->onDelete('cascade');
             $table->foreign('student_id')->references('id')->on('users')->onDelete('cascade');
             $table->unique(['teacher_id', 'student_id']);

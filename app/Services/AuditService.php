@@ -2,9 +2,11 @@
 
 namespace App\Services;
 
-use App\Models\User;
 use App\Models\AuditLog;
-use Illuminate\Pagination\Paginator;
+use App\Models\User;
+use App\Support\LikeEscape;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\Lang;
 
 /**
  * Audit logging service
@@ -27,7 +29,7 @@ class AuditService
             'action_type' => $actionType,
             'subject_type' => $subjectType,
             'subject_id' => $subjectId,
-            'metadata' => $metadata ? json_encode($metadata) : null,
+            'metadata' => $metadata ?: null,
             'created_at' => now(),
         ]);
     }
@@ -174,13 +176,13 @@ class AuditService
     /**
      * Teacher-student connection made
      */
-    public function logConnectionMade(User $admin, User $teacher, User $student): AuditLog
+    public function logConnectionMade(?User $actor, User $teacher, User $student): AuditLog
     {
         return $this->log(
             'teacher_student_connected',
             'connection',
             null,
-            $admin,
+            $actor,
             ['teacher_id' => $teacher->id, 'student_id' => $student->id]
         );
     }
@@ -202,7 +204,7 @@ class AuditService
     /**
      * Query logs by actor
      */
-    public function getByActor(User $actor, int $limit = 50): \Illuminate\Database\Eloquent\Collection
+    public function getByActor(User $actor, int $limit = 50): Collection
     {
         return AuditLog::where('actor_id', $actor->id)
             ->latest()
@@ -213,7 +215,7 @@ class AuditService
     /**
      * Query logs by action type
      */
-    public function getByAction(string $actionType, int $limit = 50): \Illuminate\Database\Eloquent\Collection
+    public function getByAction(string $actionType, int $limit = 50): Collection
     {
         return AuditLog::where('action_type', $actionType)
             ->latest()
@@ -224,7 +226,7 @@ class AuditService
     /**
      * Query logs by subject
      */
-    public function getBySubject(string $subjectType, int $subjectId, int $limit = 50): \Illuminate\Database\Eloquent\Collection
+    public function getBySubject(string $subjectType, int $subjectId, int $limit = 50): Collection
     {
         return AuditLog::where('subject_type', $subjectType)
             ->where('subject_id', $subjectId)
@@ -236,7 +238,7 @@ class AuditService
     /**
      * Query logs in date range
      */
-    public function getByDateRange(\DateTime $from, \DateTime $to, int $limit = 50): \Illuminate\Database\Eloquent\Collection
+    public function getByDateRange(\DateTime $from, \DateTime $to, int $limit = 50): Collection
     {
         return AuditLog::whereBetween('created_at', [$from, $to])
             ->latest()
@@ -247,7 +249,7 @@ class AuditService
     /**
      * Get latest logs
      */
-    public function getLatest(int $limit = 50): \Illuminate\Database\Eloquent\Collection
+    public function getLatest(int $limit = 50): Collection
     {
         return AuditLog::latest()
             ->limit($limit)
@@ -280,8 +282,9 @@ class AuditService
      */
     public function formatForDisplay(AuditLog $log): string
     {
-        $action = __("bot.audit_action_{$log->action_type}", [], 'Unknown');
-        $actor = $log->actor?->full_name ?? 'System';
+        $key = "bot.audit_action_{$log->action_type}";
+        $action = Lang::has($key) ? __($key) : e($log->action_type);
+        $actor = e($log->actor?->full_name ?? 'System');
         $time = $log->created_at->format('d.m.Y H:i');
 
         return "{$time} — {$actor}: {$action}";
@@ -290,12 +293,12 @@ class AuditService
     /**
      * Search logs by actor name or action
      */
-    public function search(string $query, int $limit = 50): \Illuminate\Database\Eloquent\Collection
+    public function search(string $query, int $limit = 50): Collection
     {
         return AuditLog::whereHas('actor', function ($q) use ($query) {
-            $q->where('full_name', 'like', "%{$query}%");
+            $q->where('full_name', 'like', LikeEscape::contains($query));
         })
-            ->orWhere('action_type', 'like', "%{$query}%")
+            ->orWhere('action_type', 'like', LikeEscape::contains($query))
             ->latest()
             ->limit($limit)
             ->get();

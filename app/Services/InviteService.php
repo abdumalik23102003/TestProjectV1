@@ -2,67 +2,51 @@
 
 namespace App\Services;
 
-use App\Models\User;
-use App\Models\TeacherStudent;
 use App\Helpers\StringHelper;
+use App\Models\Material;
+use App\Models\TeacherStudent;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
 
 class InviteService
 {
     /**
-     * Generate invite token for teacher
+     * Ustoz uchun yangi taklif tokeni yaratadi (eskisi bekor bo'ladi).
      */
     public function generateInviteForTeacher(User $teacher): string
     {
         $token = StringHelper::randomToken(32);
-        $tokenHash = hash('sha256', $token);
 
-        // Store hash (not token itself)
-        $teacher->update([
-            'teacher_approval_token' => $tokenHash,
-        ]);
+        $teacher->update(['teacher_approval_token' => $token]);
 
         return $token;
     }
 
     /**
-     * Verify token and create pending student connection
+     * Token bo'yicha faol ustozni topadi.
      */
-    public function verifyAndJoinStudent(User $student, string $token): bool
+    public function findTeacherByToken(string $token): ?User
     {
-        $tokenHash = hash('sha256', $token);
+        $token = trim($token);
 
-        // Find teacher by token hash
-        $teacher = User::where('teacher_approval_token', $tokenHash)
-            ->where('status', 'active')
-            ->first();
-
-        if (!$teacher) {
-            return false;
+        if (! preg_match('/^[A-Za-z0-9]{16,64}$/', $token)) {
+            return null;
         }
 
-        // Create or update TeacherStudent relation
-        TeacherStudent::updateOrCreate(
-            ['teacher_id' => $teacher->id, 'student_id' => $student->id],
-            [
-                'status' => 'pending',
-                'requested_at' => now(),
-            ]
-        );
-
-        return true;
+        return User::where('teacher_approval_token', $token)
+            ->where('role', 'teacher')
+            ->where('status', 'active')
+            ->first();
     }
 
     /**
-     * Approve student connection
+     * Faqat kutilayotgan (pending) so'rovni tasdiqlaydi.
      */
     public function approveStudent(User $teacher, User $student): bool
     {
-        $relation = TeacherStudent::where('teacher_id', $teacher->id)
-            ->where('student_id', $student->id)
-            ->first();
+        $relation = $this->findRelation($teacher, $student, 'pending');
 
-        if (!$relation) {
+        if (! $relation) {
             return false;
         }
 
@@ -75,15 +59,13 @@ class InviteService
     }
 
     /**
-     * Reject student connection
+     * Faqat kutilayotgan (pending) so'rovni rad etadi.
      */
     public function rejectStudent(User $teacher, User $student): bool
     {
-        $relation = TeacherStudent::where('teacher_id', $teacher->id)
-            ->where('student_id', $student->id)
-            ->first();
+        $relation = $this->findRelation($teacher, $student, 'pending');
 
-        if (!$relation) {
+        if (! $relation) {
             return false;
         }
 
@@ -93,15 +75,13 @@ class InviteService
     }
 
     /**
-     * Revoke student access
+     * Faol o'quvchining ruxsatini bekor qiladi.
      */
     public function revokeStudent(User $teacher, User $student): bool
     {
-        $relation = TeacherStudent::where('teacher_id', $teacher->id)
-            ->where('student_id', $student->id)
-            ->first();
+        $relation = $this->findRelation($teacher, $student, 'active');
 
-        if (!$relation) {
+        if (! $relation) {
             return false;
         }
 
@@ -110,9 +90,6 @@ class InviteService
         return true;
     }
 
-    /**
-     * Get pending student requests for teacher
-     */
     public function getStudentRequests(User $teacher, int $limit = 50): Collection
     {
         return TeacherStudent::where('teacher_id', $teacher->id)
@@ -123,9 +100,6 @@ class InviteService
             ->get();
     }
 
-    /**
-     * Get pending student requests count
-     */
     public function getStudentRequestsCount(User $teacher): int
     {
         return TeacherStudent::where('teacher_id', $teacher->id)
@@ -133,9 +107,6 @@ class InviteService
             ->count();
     }
 
-    /**
-     * Get active students for teacher
-     */
     public function getActiveStudents(User $teacher, int $limit = 50): Collection
     {
         return TeacherStudent::where('teacher_id', $teacher->id)
@@ -146,9 +117,6 @@ class InviteService
             ->get();
     }
 
-    /**
-     * Get active students count
-     */
     public function getActiveStudentsCount(User $teacher): int
     {
         return TeacherStudent::where('teacher_id', $teacher->id)
@@ -156,9 +124,6 @@ class InviteService
             ->count();
     }
 
-    /**
-     * Get teacher connections for student
-     */
     public function getTeacherConnections(User $student, int $limit = 50): Collection
     {
         return TeacherStudent::where('student_id', $student->id)
@@ -169,9 +134,6 @@ class InviteService
             ->get();
     }
 
-    /**
-     * Get teacher connections count
-     */
     public function getTeacherConnectionsCount(User $student): int
     {
         return TeacherStudent::where('student_id', $student->id)
@@ -179,57 +141,44 @@ class InviteService
             ->count();
     }
 
-    /**
-     * Check if student has active connection to teacher
-     */
     public function hasActiveConnection(User $student, User $teacher): bool
     {
-        return TeacherStudent::where('teacher_id', $teacher->id)
-            ->where('student_id', $student->id)
-            ->where('status', 'active')
-            ->exists();
+        return $this->findRelation($teacher, $student, 'active') !== null;
     }
 
-    /**
-     * Get connection status
-     */
     public function getConnectionStatus(User $student, User $teacher): ?string
     {
-        $relation = TeacherStudent::where('teacher_id', $teacher->id)
-            ->where('student_id', $student->id)
-            ->first();
-
-        return $relation?->status;
-    }
-
-    /**
-     * Get all teacher connections (any status)
-     */
-    public function getAllConnections(User $teacher, int $limit = 50): Collection
-    {
         return TeacherStudent::where('teacher_id', $teacher->id)
-            ->with('student')
-            ->orderBy('requested_at', 'desc')
-            ->limit($limit)
-            ->get();
+            ->where('student_id', $student->id)
+            ->value('status');
     }
 
     /**
-     * Get recent materials from connected teachers
+     * Bog'langan ustozlarning oxirgi faol materiallari.
      */
     public function getRecentMaterialsFromTeachers(User $student, int $limit = 20): Collection
     {
-        $connections = TeacherStudent::where('student_id', $student->id)
+        $teacherIds = TeacherStudent::where('student_id', $student->id)
             ->where('status', 'active')
             ->pluck('teacher_id');
 
-        if ($connections->isEmpty()) {
-            return collect();
+        if ($teacherIds->isEmpty()) {
+            return new Collection;
         }
 
-        return \App\Models\Material::whereIn('teacher_id', $connections)
+        return Material::with('teacher')
+            ->whereIn('teacher_id', $teacherIds)
+            ->where('status', 'active')
             ->orderBy('created_at', 'desc')
             ->limit($limit)
             ->get();
+    }
+
+    private function findRelation(User $teacher, User $student, string $status): ?TeacherStudent
+    {
+        return TeacherStudent::where('teacher_id', $teacher->id)
+            ->where('student_id', $student->id)
+            ->where('status', $status)
+            ->first();
     }
 }

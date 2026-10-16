@@ -2,8 +2,8 @@
 
 namespace App\Telegram\Handlers;
 
-use App\Telegram\UpdateContext;
 use App\Telegram\TelegramClient;
+use App\Telegram\UpdateContext;
 
 class HelpHandler
 {

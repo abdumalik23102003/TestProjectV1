@@ -9,76 +9,90 @@ class StorageService
 {
     protected string $disk = 'private_materials';
 
-
+    /**
+     * Faylni vaqtinchalik ("pending_") joyga saqlaydi.
+     * Diskdagi nom UUID asosida; foydalanuvchi bergan nom faqat ko'rsatish uchun qaytariladi.
+     */
     public function storeTemporaryFile($file, string $originalName): array
     {
-        $sanitizedName = $this->sanitizeFilename($originalName);
-        $datePath = now()->format('Y/m/d');
-        $path = $datePath . '/pending_' . Str::uuid() . '_' . $sanitizedName;
-        $content = file_get_contents($file);
+        $displayName = $this->sanitizeFilename($originalName);
+        $path = now()->format('Y/m/d').'/pending_'.Str::uuid().$this->extensionSuffix($displayName);
 
-        if ($content === false) {
+        $stream = fopen($file, 'rb');
+
+        if ($stream === false) {
             throw new \RuntimeException('Could not read temporary upload file.');
         }
 
-        $disk = Storage::disk($this->disk);
+        try {
+            $disk = Storage::disk($this->disk);
 
-        if (!$disk->put($path, $content)) {
-            throw new \RuntimeException('Could not save temporary upload file.');
+            if (! $disk->put($path, $stream)) {
+                throw new \RuntimeException('Could not save temporary upload file.');
+            }
+        } finally {
+            fclose($stream);
         }
 
         return [
             'path' => $path,
-            'size' => strlen($content),
+            'size' => (int) filesize($file),
             'mime' => $disk->mimeType($path),
-            'checksum' => hash('sha256', $content),
-            'original_name' => $sanitizedName,
+            'checksum' => hash_file('sha256', $file),
+            'original_name' => $displayName,
         ];
     }
 
-    public function moveToPermanent(string $tempPath, string $newFileName): string
+    /**
+     * Vaqtinchalik faylni doimiy joyga NUSXALAYDI (vaqtinchalik fayl o'chirilmaydi:
+     * chaqiruvchi bazaga yozish muvaffaqiyatli bo'lgandan keyin uni o'zi o'chiradi).
+     */
+    public function promoteToPermanent(string $tempPath): string
     {
         $disk = Storage::disk($this->disk);
 
-        if (!$disk->exists($tempPath)) {
+        if (! $disk->exists($tempPath)) {
             throw new \RuntimeException('Temporary file not found.');
         }
 
-        $safeName = $this->sanitizeFilename($newFileName);
+        $newPath = now()->format('Y/m/d').'/'.Str::uuid().$this->extensionSuffix($tempPath);
 
-        $datePath = now()->format('Y/m/d');
-        $newPath = $datePath . '/' . Str::uuid() . '_' . $safeName;
-
-        if (!$disk->copy($tempPath, $newPath)) {
-            throw new \RuntimeException('Could not move file to permanent storage.');
+        if (! $disk->copy($tempPath, $newPath)) {
+            throw new \RuntimeException('Could not copy file to permanent storage.');
         }
-
-        $disk->delete($tempPath);
 
         return $newPath;
     }
 
+    /**
+     * Ko'rsatiladigan fayl nomini tozalaydi: har qanday alifbodagi harflar,
+     * raqamlar, nuqta, tire, pastki chiziq va probel qoladi; yo'l ajratgichlari yo'qoladi.
+     */
     public function sanitizeFilename(string $filename): string
     {
-        // Xavfli belgilarni tozalash
-        $filename = str_replace(['../', '..\\', "\0"], '', $filename);
-        $filename = preg_replace('/[^a-zA-Z0-9._-]/', '_', $filename);
-        return substr($filename, 0, 255);
-    }
+        $filename = basename(str_replace('\\', '/', $filename));
+        $filename = preg_replace('/[^\p{L}\p{M}\p{N}._ -]+/u', '_', $filename) ?? '';
+        $filename = preg_replace('/\.{2,}/', '.', $filename) ?? '';
+        $filename = trim($filename, ' .');
 
-    public function generateSignedUrl(string $storagePath, int $expiryMinutes = null): string
-    {
-        $expiryMinutes = $expiryMinutes ?? config('materials.signed_url_expiry_minutes', 10);
-
-        // Storage disk'dan direct URL
-        $disk = Storage::disk($this->disk);
-
-        if (method_exists($disk, 'temporaryUrl')) {
-            return $disk->temporaryUrl($storagePath, now()->addMinutes($expiryMinutes));
+        if ($filename === '') {
+            return 'document';
         }
 
-        // Fallback: Laravel URL
-        return route('materials.download', ['path' => $storagePath]);
+        if (mb_strlen($filename) > 150) {
+            $ext = pathinfo($filename, PATHINFO_EXTENSION);
+            $base = mb_substr(pathinfo($filename, PATHINFO_FILENAME), 0, 150 - mb_strlen($ext) - 1);
+            $filename = $ext !== '' ? $base.'.'.$ext : $base;
+        }
+
+        return $filename;
+    }
+
+    public function generateSignedUrl(string $storagePath, ?int $expiryMinutes = null): string
+    {
+        $expiryMinutes ??= (int) config('materials.signed_url_expiry_minutes', 10);
+
+        return Storage::disk($this->disk)->temporaryUrl($storagePath, now()->addMinutes($expiryMinutes));
     }
 
     public function deleteFile(string $storagePath): bool
@@ -104,5 +118,12 @@ class StorageService
     public function getMimeType(string $storagePath): string
     {
         return Storage::disk($this->disk)->mimeType($storagePath);
+    }
+
+    private function extensionSuffix(string $name): string
+    {
+        $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+
+        return preg_match('/^[a-z0-9]{1,10}$/', $ext) ? '.'.$ext : '';
     }
 }

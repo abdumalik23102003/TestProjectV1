@@ -3,89 +3,91 @@
 namespace App\Services;
 
 use App\Models\User;
-use Illuminate\Support\Facades\Storage;
 use finfo;
 
 class UploadValidator
 {
-    public function validate(string $filePath, User $teacher, string $originalName): ?array
+    /**
+     * @return array{error: string}|array{mime: string, size: int, checksum: string}
+     */
+    public function validate(string $filePath, User $teacher, string $originalName): array
     {
-        // File exists
-        if (!file_exists($filePath)) {
-            return ['error' => 'File not found'];
+        if (! is_file($filePath)) {
+            return ['error' => __('bot.file_not_found')];
         }
 
-        // Get mime type
-        $finfo = finfo_open(FILEINFO_MIME_TYPE);
-        $mime = finfo_file($finfo, $filePath);
-        finfo_close($finfo);
-
-        // Check extension
+        $allowedTypes = (array) config('materials.allowed_types', []);
         $ext = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
-        $allowed = $this->getAllowedExtensions($mime);
 
-        if (!in_array($ext, $allowed)) {
-            return ['error' => 'File type not allowed: ' . $ext];
+        if (! isset($allowedTypes[$ext])) {
+            return ['error' => sprintf(
+                __('bot.invalid_file_type'),
+                implode(', ', array_keys($allowedTypes))
+            )];
         }
 
-        // Check file size
-        $size = filesize($filePath);
-        $maxSizeMb = config('materials.max_file_size_mb', 20);
-        $maxSizeBytes = $maxSizeMb * 1024 * 1024;
+        // Hajm
+        $size = (int) filesize($filePath);
+        $maxSizeMb = (int) config('materials.max_file_size_mb', 20);
 
-        if ($size > $maxSizeBytes) {
-            return ['error' => sprintf('File too large. Max: %d MB', $maxSizeMb)];
+        if ($size > $maxSizeMb * 1024 * 1024) {
+            return ['error' => sprintf(__('bot.file_too_large'), $maxSizeMb)];
         }
 
-        // Check teacher quota (simplified)
-        $usedBytes = $teacher->materials()->sum('size_bytes');
-        $quotaBytes = config('materials.teacher_storage_quota_gb', 5) * 1024 * 1024 * 1024;
+        // Haqiqiy tarkibi (kengaytma emas, fayl ichidagi imzo) bo'yicha tur
+        $mime = (new finfo(FILEINFO_MIME_TYPE))->file($filePath) ?: 'application/octet-stream';
 
-        if ($usedBytes + $size > $quotaBytes) {
-            return ['error' => 'Storage quota exceeded'];
+        if (! in_array($mime, $allowedTypes[$ext], true)) {
+            return ['error' => sprintf(
+                __('bot.invalid_file_type'),
+                implode(', ', array_keys($allowedTypes))
+            )];
         }
 
-        // Check daily limit (simplified)
+        if (in_array($ext, (array) config('materials.zip_based_extensions', []), true)
+            && ! $this->hasZipSignature($filePath)) {
+            return ['error' => sprintf(
+                __('bot.invalid_file_type'),
+                implode(', ', array_keys($allowedTypes))
+            )];
+        }
+
+        // Ustozning umumiy hajmi (kvota)
+        $quotaGb = (int) config('materials.teacher_storage_quota_gb', 5);
+        $usedBytes = (int) $teacher->materials()->sum('size_bytes');
+
+        if ($usedBytes + $size > $quotaGb * 1024 * 1024 * 1024) {
+            return ['error' => sprintf(__('bot.quota_exceeded'), $quotaGb)];
+        }
+
+        // Kunlik limit
+        $dailyLimit = (int) config('materials.max_uploads_per_day', 100);
         $todayCount = $teacher->materials()
             ->where('created_at', '>=', now()->startOfDay())
             ->count();
 
-        if ($todayCount >= config('materials.max_uploads_per_day', 100)) {
-            return ['error' => 'Daily upload limit exceeded'];
+        if ($todayCount >= $dailyLimit) {
+            return ['error' => sprintf(__('bot.daily_limit_exceeded'), $dailyLimit)];
         }
-
-        // Checksum
-        $checksum = hash_file('sha256', $filePath);
 
         return [
             'mime' => $mime,
             'size' => $size,
-            'checksum' => $checksum,
+            'checksum' => hash_file('sha256', $filePath),
         ];
     }
 
-    protected function getAllowedExtensions(string $mime): array
+    private function hasZipSignature(string $filePath): bool
     {
-        $mapping = [
-            'application/pdf' => ['pdf'],
-            'application/epub' => ['epub'],
-            'application/msword' => ['doc'],
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => ['docx'],
-            'text/plain' => ['txt'],
-            'application/rtf' => ['rtf'],
-            'application/vnd.ms-powerpoint' => ['ppt'],
-            'application/vnd.openxmlformats-officedocument.presentationml.presentation' => ['pptx'],
-            'image/jpeg' => ['jpg', 'jpeg'],
-            'image/png' => ['png'],
-            'image/webp' => ['webp'],
-            'audio/mpeg' => ['mp3'],
-            'audio/mp4' => ['m4a'],
-            'video/mp4' => ['mp4'],
-            'video/quicktime' => ['mov'],
-            'video/x-msvideo' => ['avi'],
-            'video/x-matroska' => ['mkv'],
-        ];
+        $handle = fopen($filePath, 'rb');
 
-        return $mapping[$mime] ?? [];
+        if ($handle === false) {
+            return false;
+        }
+
+        $head = fread($handle, 4);
+        fclose($handle);
+
+        return $head === "PK\x03\x04";
     }
 }

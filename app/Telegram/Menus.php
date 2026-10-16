@@ -29,7 +29,6 @@ class Menus
     /**
      * Main teacher menu
      */
-
     public static function teacherMain(): array
     {
         return [
@@ -58,7 +57,6 @@ class Menus
             ],
         ];
     }
-
 
     /**
      * Main student menu
@@ -94,7 +92,7 @@ class Menus
      */
     public static function confirm(string $prompt = ''): array
     {
-        $text = !empty($prompt) ? $prompt : __('bot.select_option');
+        $text = ! empty($prompt) ? $prompt : __('bot.select_option');
 
         return [
             'text' => $text,
@@ -112,7 +110,7 @@ class Menus
      */
     public static function approveReject(string $prompt = ''): array
     {
-        $text = !empty($prompt) ? $prompt : __('bot.select_option');
+        $text = ! empty($prompt) ? $prompt : __('bot.select_option');
 
         return [
             'text' => $text,
@@ -130,7 +128,7 @@ class Menus
      */
     public static function back(string $prompt = ''): array
     {
-        $text = !empty($prompt) ? $prompt : __('bot.back_to_menu');
+        $text = ! empty($prompt) ? $prompt : __('bot.back_to_menu');
 
         return [
             'text' => $text,
@@ -204,8 +202,8 @@ class Menus
         return [
             'text' => __('bot.select_visibility'),
             'buttons' => [
-                [Keyboard::button('🌍 ' . __('bot.status_public'), 'upload:vis:public')],
-                [Keyboard::button('🔒 ' . __('bot.status_private'), 'upload:vis:private')],
+                [Keyboard::button('🌍 '.__('bot.status_public'), 'upload:vis:public')],
+                [Keyboard::button('🔒 '.__('bot.status_private'), 'upload:vis:private')],
                 [Keyboard::button(__('bot.btn_back'), 'menu:main')],
             ],
         ];

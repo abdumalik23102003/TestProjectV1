@@ -10,10 +10,10 @@ class Category extends Model
         'name',
         'slug',
         'is_active',
-        'sort_order'
+        'sort_order',
     ];
 
     protected $casts = [
-        'is_active' => 'boolean'
+        'is_active' => 'boolean',
     ];
 }

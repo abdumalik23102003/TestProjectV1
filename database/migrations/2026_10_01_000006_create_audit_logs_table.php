@@ -16,7 +16,7 @@ return new class extends Migration
             $table->unsignedBigInteger('subject_id')->nullable();
             $table->json('metadata')->nullable();
             $table->timestamp('created_at');
-            
+
             $table->foreign('actor_id')->references('id')->on('users')->onDelete('set null');
             $table->index('action_type');
             $table->index('subject_type');

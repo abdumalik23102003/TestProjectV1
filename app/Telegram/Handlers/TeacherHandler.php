@@ -4,27 +4,26 @@ namespace App\Telegram\Handlers;
 
 use App\Http\Controllers\TeacherController;
 use App\Models\Material;
-use App\Models\User;
 use App\Models\TeacherStudent;
-use App\Services\SessionService;
+use App\Models\User;
 use App\Services\AuditService;
-use App\Services\InviteService;
 use App\Services\ConnectionService;
-use App\Telegram\UpdateContext;
-use App\Telegram\TelegramClient;
+use App\Services\InviteService;
+use App\Services\SessionService;
 use App\Telegram\Keyboard;
+use App\Telegram\TelegramClient;
+use App\Telegram\UpdateContext;
+use Illuminate\Support\Str;
 
 class TeacherHandler
 {
     public function handle(
-        UpdateContext  $ctx,
+        UpdateContext $ctx,
         TelegramClient $client,
-        array          $parts
-    ): void
-    {
+        array $parts
+    ): void {
         $action = $parts[1] ?? null;
         $telegramUserId = $ctx->telegramUserId;
-
 
         if (in_array($action, ['cat', 'vis'], true)) {
             $user = User::where(
@@ -33,7 +32,7 @@ class TeacherHandler
             )->first();
 
             if (
-                !$user ||
+                ! $user ||
                 $user->role !== 'teacher' ||
                 $user->status !== 'active'
             ) {
@@ -67,17 +66,17 @@ class TeacherHandler
             return;
         }
 
-
         // Upload callbacklari uchun foydalanuvchini tekshiramiz.
         if (in_array($action, ['save', 'cancel', 'edit', 'back'], true)) {
             $user = User::where('telegram_user_id', $telegramUserId)->first();
 
-            if (!$user || $user->role !== 'teacher' || $user->status !== 'active') {
+            if (! $user || $user->role !== 'teacher' || $user->status !== 'active') {
                 $client->answerCallbackQuery(
                     $this->getCallbackId($ctx),
                     '❌ Ustoz ruxsati talab qilinadi.',
                     true
                 );
+
                 return;
             }
 
@@ -99,6 +98,7 @@ class TeacherHandler
             }
 
             $client->answerCallbackQuery($this->getCallbackId($ctx));
+
             return;
         }
 
@@ -107,16 +107,16 @@ class TeacherHandler
             'files', 'materials' => $this->listFiles($ctx, $client),
             'students' => $this->listStudents($ctx, $client),
             'students_pending' => $this->listPendingStudents($ctx, $client),
-            'approve_student' => $this->approveStudent($ctx, $client, (int)($parts[2] ?? 0)),
-            'reject_student' => $this->rejectStudent($ctx, $client, (int)($parts[2] ?? 0)),
-            'remove_student' => $this->removeStudent($ctx, $client, (int)($parts[2] ?? 0)),
+            'approve_student' => $this->approveStudent($ctx, $client, (int) ($parts[2] ?? 0)),
+            'reject_student' => $this->rejectStudent($ctx, $client, (int) ($parts[2] ?? 0)),
+            'remove_student' => $this->removeStudent($ctx, $client, (int) ($parts[2] ?? 0)),
             'link' => $this->showInviteLink($ctx, $client),
             'stats' => $this->showStats($ctx, $client),
             'search' => $this->showSearchOptions($ctx, $client),
             'search_my' => $this->startSearch($ctx, $client, 'my'),
             'search_shared' => $this->startSearch($ctx, $client, 'shared'),
             'settings' => $this->showSettings($ctx, $client),
-            'view' => $this->viewMaterial($ctx, $client, (int)($parts[2] ?? 0)),
+            'view' => $this->viewMaterial($ctx, $client, (int) ($parts[2] ?? 0)),
             default => $client->answerCallbackQuery(
                 $this->getCallbackId($ctx),
                 __('bot.unknown_action')
@@ -128,12 +128,13 @@ class TeacherHandler
     {
         $user = User::where('telegram_user_id', $ctx->telegramUserId)->first();
 
-        if (!$user || $user->role !== 'teacher' || $user->status !== 'active') {
+        if (! $user || $user->role !== 'teacher' || $user->status !== 'active') {
             $client->answerCallbackQuery(
                 $this->getCallbackId($ctx),
                 '❌ Tasdiqlangan ustoz bo\'lishingiz kerak.',
                 true
             );
+
             return;
         }
 
@@ -161,12 +162,13 @@ class TeacherHandler
             $ctx->telegramUserId
         )->first();
 
-        if (!$user || $user->role !== 'teacher' || $user->status !== 'active') {
+        if (! $user || $user->role !== 'teacher' || $user->status !== 'active') {
             $client->answerCallbackQuery(
                 $this->getCallbackId($ctx),
                 __('bot.unauthorized'),
                 true
             );
+
             return;
         }
 
@@ -180,18 +182,18 @@ class TeacherHandler
         $buttons = [];
 
         if ($materials->isEmpty()) {
-            $text .= "Hozircha sizda faol materiallar yo‘q.";
+            $text .= 'Hozircha sizda faol materiallar yo‘q.';
         } else {
             $text .= "Materialni tanlang:\n";
 
             foreach ($materials as $material) {
                 $buttons[] = [
                     Keyboard::button(
-                        '📄 ' . \Illuminate\Support\Str::limit(
+                        '📄 '.Str::limit(
                             $material->title,
                             35
                         ),
-                        'teacher:view:' . $material->id
+                        'teacher:view:'.$material->id
                     ),
                 ];
             }
@@ -215,8 +217,9 @@ class TeacherHandler
     {
         $user = User::where('telegram_user_id', $ctx->telegramUserId)->first();
 
-        if (!$user || $user->role !== 'teacher') {
+        if (! $user || $user->role !== 'teacher') {
             $client->sendMessage($ctx->chatId, __('bot.unauthorized'));
+
             return;
         }
 
@@ -225,6 +228,7 @@ class TeacherHandler
 
         if ($students->isEmpty()) {
             $client->sendMessage($ctx->chatId, __('bot.teacher_no_students'));
+
             return;
         }
 
@@ -246,8 +250,9 @@ class TeacherHandler
     {
         $user = User::where('telegram_user_id', $ctx->telegramUserId)->first();
 
-        if (!$user || $user->role !== 'teacher') {
+        if (! $user || $user->role !== 'teacher') {
             $client->sendMessage($ctx->chatId, __('bot.unauthorized'));
+
             return;
         }
 
@@ -256,6 +261,7 @@ class TeacherHandler
 
         if ($pending->isEmpty()) {
             $client->sendMessage($ctx->chatId, __('bot.no_pending_requests'));
+
             return;
         }
 
@@ -266,7 +272,7 @@ class TeacherHandler
             $student = $conn->student;
             $text .= "• {$student->full_name}\n";
             $keyboard[] = [
-                Keyboard::button('✅ ' . $student->full_name, 'teacher:approve_student:' . $conn->id),
+                Keyboard::button('✅ '.$student->full_name, 'teacher:approve_student:'.$conn->id),
             ];
         }
 
@@ -279,15 +285,17 @@ class TeacherHandler
     {
         $user = User::where('telegram_user_id', $ctx->telegramUserId)->first();
 
-        if (!$user || $user->role !== 'teacher') {
+        if (! $user || $user->role !== 'teacher') {
             $client->answerCallbackQuery($this->getCallbackId($ctx), __('bot.unauthorized'), true);
+
             return;
         }
 
         $connection = TeacherStudent::find($connectionId);
 
-        if (!$connection || $connection->teacher_id !== $user->id) {
+        if (! $connection || $connection->teacher_id !== $user->id) {
             $client->answerCallbackQuery($this->getCallbackId($ctx), 'Bog\'lanish topilmadi.', true);
+
             return;
         }
 
@@ -306,15 +314,17 @@ class TeacherHandler
     {
         $user = User::where('telegram_user_id', $ctx->telegramUserId)->first();
 
-        if (!$user || $user->role !== 'teacher') {
+        if (! $user || $user->role !== 'teacher') {
             $client->answerCallbackQuery($this->getCallbackId($ctx), __('bot.unauthorized'), true);
+
             return;
         }
 
         $connection = TeacherStudent::find($connectionId);
 
-        if (!$connection || $connection->teacher_id !== $user->id) {
+        if (! $connection || $connection->teacher_id !== $user->id) {
             $client->answerCallbackQuery($this->getCallbackId($ctx), 'Bog\'lanish topilmadi.', true);
+
             return;
         }
 
@@ -333,15 +343,17 @@ class TeacherHandler
     {
         $user = User::where('telegram_user_id', $ctx->telegramUserId)->first();
 
-        if (!$user || $user->role !== 'teacher') {
+        if (! $user || $user->role !== 'teacher') {
             $client->answerCallbackQuery($this->getCallbackId($ctx), __('bot.unauthorized'), true);
+
             return;
         }
 
         $connection = TeacherStudent::find($connectionId);
 
-        if (!$connection || $connection->teacher_id !== $user->id) {
+        if (! $connection || $connection->teacher_id !== $user->id) {
             $client->answerCallbackQuery($this->getCallbackId($ctx), 'Bog\'lanish topilmadi.', true);
+
             return;
         }
 
@@ -360,15 +372,16 @@ class TeacherHandler
     {
         $user = User::where('telegram_user_id', $ctx->telegramUserId)->first();
 
-        if (!$user || $user->role !== 'teacher' || $user->status !== 'active') {
+        if (! $user || $user->role !== 'teacher' || $user->status !== 'active') {
             $client->sendMessage($ctx->chatId, __('bot.unauthorized'));
+
             return;
         }
 
         $connectionService = app(ConnectionService::class);
         $link = $connectionService->getInviteLink($user);
 
-        $text = __('bot.invite_link') . "\n\n";
+        $text = __('bot.invite_link')."\n\n";
         $text .= "<code>{$link}</code>\n\n";
         $text .= __('bot.copy_link');
 
@@ -380,16 +393,15 @@ class TeacherHandler
     }
 
     protected function showSearchOptions(
-        UpdateContext  $ctx,
+        UpdateContext $ctx,
         TelegramClient $client
-    ): void
-    {
+    ): void {
         $user = User::where(
             'telegram_user_id',
             $ctx->telegramUserId
         )->first();
 
-        if (!$user || $user->role !== 'teacher' || $user->status !== 'active') {
+        if (! $user || $user->role !== 'teacher' || $user->status !== 'active') {
             $client->answerCallbackQuery(
                 $this->getCallbackId($ctx),
                 __('bot.unauthorized'),
@@ -400,7 +412,7 @@ class TeacherHandler
         }
 
         $text = "🔎 <b>Material qidirish</b>\n\n";
-        $text .= "Qaysi manbadan qidirmoqchisiz?";
+        $text .= 'Qaysi manbadan qidirmoqchisiz?';
 
         $buttons = [
             [
@@ -434,17 +446,16 @@ class TeacherHandler
     }
 
     protected function startSearch(
-        UpdateContext  $ctx,
+        UpdateContext $ctx,
         TelegramClient $client,
-        string         $scope
-    ): void
-    {
+        string $scope
+    ): void {
         $user = User::where(
             'telegram_user_id',
             $ctx->telegramUserId
         )->first();
 
-        if (!$user || $user->role !== 'teacher' || $user->status !== 'active') {
+        if (! $user || $user->role !== 'teacher' || $user->status !== 'active') {
             $client->answerCallbackQuery(
                 $this->getCallbackId($ctx),
                 __('bot.unauthorized'),
@@ -496,12 +507,13 @@ class TeacherHandler
     {
         $user = User::where('telegram_user_id', $ctx->telegramUserId)->first();
 
-        if (!$user || $user->role !== 'teacher' || $user->status !== 'active') {
+        if (! $user || $user->role !== 'teacher' || $user->status !== 'active') {
             $client->answerCallbackQuery(
                 $this->getCallbackId($ctx),
                 __('bot.unauthorized'),
                 true
             );
+
             return;
         }
 
@@ -513,7 +525,7 @@ class TeacherHandler
         $private = (clone $materials)->where('visibility', 'private')->count();
 
         $students = TeacherStudent::where('teacher_id', $user->id)
-            ->where('status', 'approved')
+            ->where('status', 'active')
             ->count();
 
         $text = "📊 <b>Statistika</b>\n\n";
@@ -539,20 +551,21 @@ class TeacherHandler
     {
         $user = User::where('telegram_user_id', $ctx->telegramUserId)->first();
 
-        if (!$user || $user->role !== 'teacher' || $user->status !== 'active') {
+        if (! $user || $user->role !== 'teacher' || $user->status !== 'active') {
             $client->answerCallbackQuery(
                 $this->getCallbackId($ctx),
                 __('bot.unauthorized'),
                 true
             );
+
             return;
         }
 
         $text = "⚙️ <b>Ustoz sozlamalari</b>\n\n";
-        $text .= "👤 Ism: " . e($user->full_name) . "\n";
-        $text .= "📊 Holat: " . e($user->status) . "\n";
-        $text .= "🆔 Telegram ID: " . $ctx->telegramUserId . "\n\n";
-        $text .= "Hozircha bu bo‘limda o‘zgartiriladigan sozlamalar mavjud emas.";
+        $text .= '👤 Ism: '.e($user->full_name)."\n";
+        $text .= '📊 Holat: '.e($user->status)."\n";
+        $text .= '🆔 Telegram ID: '.$ctx->telegramUserId."\n\n";
+        $text .= 'Hozircha bu bo‘limda o‘zgartiriladigan sozlamalar mavjud emas.';
 
         $client->editOrSendMessage(
             $ctx->chatId,
@@ -567,19 +580,19 @@ class TeacherHandler
     }
 
     protected function viewMaterial(
-        UpdateContext  $ctx,
+        UpdateContext $ctx,
         TelegramClient $client,
-        int            $materialId
-    ): void
-    {
+        int $materialId
+    ): void {
         $user = User::where('telegram_user_id', $ctx->telegramUserId)->first();
 
-        if (!$user || $user->role !== 'teacher' || $user->status !== 'active') {
+        if (! $user || $user->role !== 'teacher' || $user->status !== 'active') {
             $client->answerCallbackQuery(
                 $this->getCallbackId($ctx),
                 __('bot.unauthorized'),
                 true
             );
+
             return;
         }
 
@@ -587,23 +600,24 @@ class TeacherHandler
             ->where('teacher_id', $user->id)
             ->first();
 
-        if (!$material) {
+        if (! $material) {
             $client->answerCallbackQuery(
                 $this->getCallbackId($ctx),
                 'Fayl topilmadi.',
                 true
             );
+
             return;
         }
 
-        $text = "📄 <b>" . e($material->title) . "</b>\n\n";
-        $text .= "📁 Fayl: " . e($material->original_filename ?? '—') . "\n";
-        $text .= "🔒 Ko‘rinish: " . ($material->isPublic() ? 'Ommaviy' : 'Shaxsiy') . "\n";
-        $text .= "📊 Holat: " . e($material->status) . "\n";
-        $text .= "📦 Hajm: " . $this->formatBytes((int)$material->size_bytes) . "\n";
+        $text = '📄 <b>'.e($material->title)."</b>\n\n";
+        $text .= '📁 Fayl: '.e($material->original_filename ?? '—')."\n";
+        $text .= '🔒 Ko‘rinish: '.($material->isPublic() ? 'Ommaviy' : 'Shaxsiy')."\n";
+        $text .= '📊 Holat: '.e($material->status)."\n";
+        $text .= '📦 Hajm: '.$this->formatBytes((int) $material->size_bytes)."\n";
 
         if ($material->description) {
-            $text .= "\n📝 Tavsif: " . e($material->description);
+            $text .= "\n📝 Tavsif: ".e($material->description);
         }
 
         $client->editOrSendMessage(
@@ -626,13 +640,13 @@ class TeacherHandler
 
         $units = ['B', 'KB', 'MB', 'GB', 'TB'];
         $index = 0;
-        $size = (float)$bytes;
+        $size = (float) $bytes;
 
         while ($size >= 1024 && $index < count($units) - 1) {
             $size /= 1024;
             $index++;
         }
 
-        return round($size, 2) . ' ' . $units[$index];
+        return round($size, 2).' '.$units[$index];
     }
 }

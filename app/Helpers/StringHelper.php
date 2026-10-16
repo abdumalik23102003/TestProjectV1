@@ -21,7 +21,7 @@ class StringHelper
             return substr($filename, 0, $maxLength);
         }
 
-        return substr($name, 0, $maxNameLength) . '.' . $ext;
+        return substr($name, 0, $maxNameLength).'.'.$ext;
     }
 
     /**

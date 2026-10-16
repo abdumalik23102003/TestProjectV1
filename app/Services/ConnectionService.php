@@ -2,231 +2,149 @@
 
 namespace App\Services;
 
-use App\Models\User;
 use App\Models\TeacherStudent;
-use App\Helpers\StringHelper;
-use Illuminate\Database\Eloquent\Collection;
+use App\Models\User;
 
 /**
- * Connection service for teacher-student relationship management
+ * Ustoz–o'quvchi bog'lanishlari: taklif havolasi, so'rov, tasdiqlash.
  */
 class ConnectionService
 {
-    protected InviteService $inviteService;
-    protected AuditService $auditService;
+    public function __construct(
+        protected InviteService $inviteService,
+        protected AuditService $auditService,
+        protected TelegramService $telegram
+    ) {}
 
-    public function __construct()
+    public function getInviteLink(User $teacher): string
     {
-        $this->inviteService = app(InviteService::class);
-        $this->auditService = app(AuditService::class);
-    }
-
-    /**
-     * Send invite link to student (teacher action)
-     */
-    public function sendInviteToStudent(User $teacher, User $student): ?string
-    {
-        if (!$teacher->isTeacher() || !$teacher->isActive()) {
-            return null;
-        }
-
-        // Check if already connected
-        $status = $this->inviteService->getConnectionStatus($student, $teacher);
-        if ($status === 'active' || $status === 'pending') {
-            return null;
-        }
-
-        // Generate new invite token
-        $token = $this->inviteService->generateInviteForTeacher($teacher);
-
-        // Log the action
-        $this->auditService->log(
-            'invite_sent',
-            'connection',
-            $student->id,
-            $teacher,
-            ['student_name' => $student->full_name]
-        );
-
-        return $token;
-    }
-
-    /**
-     * Get shareable invite link for teacher
-     */
-    public function getInviteLink(User $teacher): ?string
-    {
-        if (!$teacher->teacher_approval_token) {
-            $token = $this->inviteService->generateInviteForTeacher($teacher);
-        } else {
-            $token = $teacher->teacher_approval_token;
-        }
+        $token = $teacher->teacher_approval_token
+            ?: $this->inviteService->generateInviteForTeacher($teacher);
 
         $botUsername = config('telegram.bot_username', 'your_bot');
+
         return "https://t.me/{$botUsername}?start=join_{$token}";
     }
 
     /**
-     * Process student joining via invite link
+     * O'quvchi havola orqali ustozga ulanishni so'raydi.
+     *
+     * @return array{status: string, teacher: ?User}
+     *                                               status: requested | invalid | students_only | already_active | already_pending | rejected
      */
-    public function handleJoinLink(User $student, string $token): bool
+    public function requestJoin(User $student, string $token): array
     {
-        $result = $this->inviteService->verifyAndJoinStudent($student, $token);
+        $teacher = $this->inviteService->findTeacherByToken($token);
 
-        if ($result) {
-            // Find the teacher to log
-            $tokenHash = hash('sha256', $token);
-            $teacher = User::where('teacher_approval_token', $tokenHash)
-                ->where('status', 'active')
-                ->first();
-
-            if ($teacher) {
-                $this->auditService->logConnectionMade(null, $teacher, $student);
-            }
+        if (! $teacher || (int) $teacher->id === (int) $student->id) {
+            return ['status' => 'invalid', 'teacher' => null];
         }
 
-        return $result;
-    }
-
-    /**
-     * Get pending connection requests for teacher
-     */
-    public function getPendingRequests(User $teacher, int $limit = 50): Collection
-    {
-        return $this->inviteService->getStudentRequests($teacher, $limit);
-    }
-
-    /**
-     * Get pending requests count
-     */
-    public function getPendingRequestsCount(User $teacher): int
-    {
-        return $this->inviteService->getStudentRequestsCount($teacher);
-    }
-
-    /**
-     * Get active connections for teacher
-     */
-    public function getActiveConnections(User $teacher, int $limit = 50): Collection
-    {
-        return $this->inviteService->getActiveStudents($teacher, $limit);
-    }
-
-    /**
-     * Get active connections count
-     */
-    public function getActiveConnectionsCount(User $teacher): int
-    {
-        return $this->inviteService->getActiveStudentsCount($teacher);
-    }
-
-    /**
-     * Teacher approves student request
-     */
-    public function approveStudentRequest(User $teacher, User $student): bool
-    {
-        $result = $this->inviteService->approveStudent($teacher, $student);
-
-        if ($result) {
-            $this->auditService->log(
-                'student_approved',
-                'connection',
-                $student->id,
-                $teacher,
-                ['student_name' => $student->full_name]
-            );
+        if (! $student->isStudent() || ! $student->isActive()) {
+            return ['status' => 'students_only', 'teacher' => $teacher];
         }
 
-        return $result;
-    }
+        $existing = TeacherStudent::where('teacher_id', $teacher->id)
+            ->where('student_id', $student->id)
+            ->first();
 
-    /**
-     * Teacher rejects student request
-     */
-    public function rejectStudentRequest(User $teacher, User $student): bool
-    {
-        $result = $this->inviteService->rejectStudent($teacher, $student);
-
-        if ($result) {
-            $this->auditService->log(
-                'student_rejected',
-                'connection',
-                $student->id,
-                $teacher,
-                ['student_name' => $student->full_name]
-            );
-        }
-
-        return $result;
-    }
-
-    /**
-     * Teacher removes active student
-     */
-    public function removeStudentAccess(User $teacher, User $student): bool
-    {
-        $result = $this->inviteService->revokeStudent($teacher, $student);
-
-        if ($result) {
-            $this->auditService->log(
-                'student_removed',
-                'connection',
-                $student->id,
-                $teacher,
-                ['student_name' => $student->full_name]
-            );
-        }
-
-        return $result;
-    }
-
-    /**
-     * Get teacher connections for student
-     */
-    public function getTeacherConnections(User $student, int $limit = 50): Collection
-    {
-        return $this->inviteService->getTeacherConnections($student, $limit);
-    }
-
-    /**
-     * Get teacher connections count
-     */
-    public function getTeacherConnectionsCount(User $student): int
-    {
-        return $this->inviteService->getTeacherConnectionsCount($student);
-    }
-
-    /**
-     * Format connection for display
-     */
-    public function formatConnectionForDisplay(TeacherStudent $connection): string
-    {
-        $user = $connection->teacher ?? $connection->student;
-        $status = match ($connection->status) {
-            'active' => '✅',
-            'pending' => '⏳',
-            'rejected' => '❌',
-            'revoked' => '🚫',
-            default => '❓',
+        $blocked = match ($existing?->status) {
+            'active' => 'already_active',
+            'pending' => 'already_pending',
+            'rejected' => 'rejected',
+            default => null,
         };
 
-        return "{$status} {$user->full_name} ({$user->role})";
+        if ($blocked !== null) {
+            return ['status' => $blocked, 'teacher' => $teacher];
+        }
+
+        $connection = TeacherStudent::updateOrCreate(
+            ['teacher_id' => $teacher->id, 'student_id' => $student->id],
+            ['status' => 'pending', 'requested_at' => now(), 'approved_at' => null]
+        );
+
+        $this->auditService->log(
+            'join_requested',
+            'connection',
+            $connection->id,
+            $student,
+            ['teacher_id' => $teacher->id]
+        );
+
+        $this->telegram->sendMessage(
+            $teacher->telegram_user_id,
+            __('bot.join_request_notice', ['name' => $student->full_name]),
+            [[
+                ['text' => __('bot.btn_confirm'), 'callback_data' => 'teacher:approve_student:'.$connection->id],
+                ['text' => __('bot.btn_reject'), 'callback_data' => 'teacher:reject_student:'.$connection->id],
+            ]]
+        );
+
+        return ['status' => 'requested', 'teacher' => $teacher];
     }
 
     /**
-     * Format connections list
+     * requestJoin() natijasiga mos til kaliti.
      */
-    public function formatConnectionsList(Collection $connections): string
+    public static function joinMessageKey(string $status): string
     {
-        if ($connections->isEmpty()) {
-            return __('bot.no_connections');
+        return match ($status) {
+            'requested' => 'bot.join_requested',
+            'students_only' => 'bot.join_students_only',
+            'already_active' => 'bot.join_already_active',
+            'already_pending' => 'bot.join_already_pending',
+            'rejected' => 'bot.join_rejected',
+            default => 'bot.join_invalid',
+        };
+    }
+
+    public function approveStudentRequest(User $teacher, User $student): bool
+    {
+        if (! $this->inviteService->approveStudent($teacher, $student)) {
+            return false;
         }
 
-        $text = '';
-        foreach ($connections as $connection) {
-            $text .= $this->formatConnectionForDisplay($connection) . "\n";
+        $this->auditService->log('student_approved', 'connection', $student->id, $teacher, [
+            'student_name' => $student->full_name,
+        ]);
+
+        $this->telegram->sendMessage(
+            $student->telegram_user_id,
+            __('bot.student_connected_notice', ['name' => $teacher->full_name])
+        );
+
+        return true;
+    }
+
+    public function rejectStudentRequest(User $teacher, User $student): bool
+    {
+        if (! $this->inviteService->rejectStudent($teacher, $student)) {
+            return false;
         }
 
-        return $text;
+        $this->auditService->log('student_rejected', 'connection', $student->id, $teacher, [
+            'student_name' => $student->full_name,
+        ]);
+
+        $this->telegram->sendMessage(
+            $student->telegram_user_id,
+            __('bot.student_rejected_notice', ['name' => $teacher->full_name])
+        );
+
+        return true;
+    }
+
+    public function removeStudentAccess(User $teacher, User $student): bool
+    {
+        if (! $this->inviteService->revokeStudent($teacher, $student)) {
+            return false;
+        }
+
+        $this->auditService->log('student_removed', 'connection', $student->id, $teacher, [
+            'student_name' => $student->full_name,
+        ]);
+
+        return true;
     }
 }

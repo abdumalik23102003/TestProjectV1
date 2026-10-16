@@ -1,51 +1,27 @@
-# Telegram Kutubxona Boti — Claude Coding Assistant Qoidalari
+# Telegram Kutubxona Boti: kodlash qoidalari
 
-Bu fayl Claude AI va boshqa model asistentlar uchun loyihani kodlash qoidalarini belgilaydi.
+Stack: Laravel 13, PHP 8.3+, MySQL 8.4, Docker Sail, Telegram Bot API.
 
-## Asosiy Qoidalar
+## Ish tartibi
 
-1. **"Xatoni ushlab, avtomatik davom etish" yo'li:** Boshqaruv faqat `migrate:fresh --seed` va `test` chaqiroviga beriladi. Agar muvaffaqiyatli bo'lsa, quyidagi bosqichga o'tish. Agar xato bo'lsa, avtomatik tuzatma va qayta urinish.
-
-2. **Vibe Coding Uslubi:** Kodni dastlab hammasini tugatib yozing, so'ng tekshiring. Oraliq tekshiruv yo'q.
-
-3. **Telegram API Ochishini Hamqoşla:** 
-   - Token loglarda yo'k bo'lsin (`***` bilan almashtir)
-   - Hamma Telegram chaqiruvi `TelegramClient` orqali
-   - Mock'lash uchun `Http::fake()` 
-
-4. **Database:** MySQL/MariaDB asosiy (FULLTEXT qidiruv), SQLite zaxira (LIKE).
-
-5. **Xavfsizlik:**
-   - Webhook secret `X-Telegram-Bot-Api-Secret-Token` bilan
-   - Role va holat tekshiruvi har callbackda
-   - File path UUID asosida
-   - HTML-escape user input
-
-6. **Tests:** Feature va Unit testlar, `RefreshDatabase`, `Http::fake()`.
-
-7. **Lang:** Barcha foydalanuvchi matni `lang/uz/bot.php` ichida, hardkod yo'q.
-
-## Development Workflow
+Mahalliy kompyuterda PHP bo'lmasligi mumkin: barcha buyruqlar Sail orqali ishlaydi.
 
 ```bash
-# Yangi feature
-php artisan make:migration ...
-php artisan make:model ...
-# Kodla
-./vendor/bin/sail artisan migrate:fresh --seed
 ./vendor/bin/sail artisan test
-
-# Commit (test o'tgan keyin)
-git add .
-git commit -m "Feature: ..."
+./vendor/bin/sail composer lint      # Pint (kod uslubi)
+./vendor/bin/sail composer format
 ```
 
-## Bosqichlar (E0-E8)
+Har bir o'zgarishdan keyin testlar o'tishi kerak. Kod uslubi Pint bilan tekshiriladi (CI ham).
 
-Har bosqich TZ v2 1-8 bo'limlarida belgilangan. E0 dan E8 gacha vibe coding orqali.
+## Qoidalar
 
----
+1. **Sirlar:** `.env` repoga tushmaydi. Token loglarda `***` bilan almashtiriladi.
+2. **Telegram:** barcha chaqiruvlar `TelegramClient` orqali. Testlarda `Http::fake()`.
+3. **Matnlar:** barcha foydalanuvchi matni `lang/uz/bot.php` da, kodda qattiq yozilmaydi.
+4. **Xavfsizlik:** har bir callbackda rol va holat qayta tekshiriladi; foydalanuvchi matni chiqarishda `e()` bilan escape qilinadi; fayl yo'llari UUID asosida.
+5. **Ma'lumotlar bazasi:** MySQL. Qidiruv escape qilingan `LIKE` bilan (`App\Support\LikeEscape`).
+6. **Testlar:** Feature va Unit, `RefreshDatabase`. Yangi oqim uchun real webhook oqimini sinovdan o'tkazing.
+7. **Tuzilma:** yangi tugma/matn oqimi uchun handler yarating (`app/Telegram/Handlers`), biznes qoida `app/Services` da bo'lsin. `TelegramWebhookController` faqat kirish nuqtasi.
 
-**Prepared for:** AI Assistants (Claude, GPT, LLaMA)  
-**Version:** 2.0  
-**Date:** Oct 12, 2026
+Tuzilma tafsiloti: `docs/ARCHITECTURE.md`. Joylash: `docs/DEPLOY.md`.

@@ -4,12 +4,14 @@ namespace App\Telegram\Handlers;
 
 use App\Http\Controllers\StudentController;
 use App\Models\User;
-use App\Telegram\UpdateContext;
-use App\Telegram\TelegramClient;
-use App\Telegram\Keyboard;
-use App\Services\SessionService;
 use App\Services\AuditService;
 use App\Services\InviteService;
+use App\Services\SearchService;
+use App\Services\SessionService;
+use App\Telegram\Keyboard;
+use App\Telegram\TelegramClient;
+use App\Telegram\UpdateContext;
+use Illuminate\Support\Str;
 
 class StudentHandler
 {
@@ -70,9 +72,9 @@ class StudentHandler
         )->first();
 
         if (
-            !$user ||
+            ! $user ||
             $user->status !== 'active' ||
-            !in_array($user->role, ['teacher', 'student'], true)
+            ! in_array($user->role, ['teacher', 'student'], true)
         ) {
             app(TelegramClient::class)->answerCallbackQuery(
                 $callbackId,
@@ -103,8 +105,9 @@ class StudentHandler
 
     protected function listTeachers(UpdateContext $ctx, TelegramClient $client): void
     {
-        if (!$ctx->user) {
+        if (! $ctx->user) {
             $client->sendMessage($ctx->chatId, __('bot.unauthorized'));
+
             return;
         }
 
@@ -112,9 +115,10 @@ class StudentHandler
         $connections = $inviteService->getTeacherConnections($ctx->user, 20);
 
         if ($connections->isEmpty()) {
-            $text = __('bot.no_teachers') . "\n\n";
+            $text = __('bot.no_teachers')."\n\n";
             $text .= "💡 Ustozga bog'lanish uchun ularning undirish havolasini so'ring.";
             $client->sendMessage($ctx->chatId, $text);
+
             return;
         }
 
@@ -139,8 +143,9 @@ class StudentHandler
 
     protected function listRecent(UpdateContext $ctx, TelegramClient $client): void
     {
-        if (!$ctx->user) {
+        if (! $ctx->user) {
             $client->sendMessage($ctx->chatId, __('bot.unauthorized'));
+
             return;
         }
 
@@ -149,6 +154,7 @@ class StudentHandler
 
         if ($materials->isEmpty()) {
             $client->sendMessage($ctx->chatId, __('bot.no_results'));
+
             return;
         }
 
@@ -156,7 +162,7 @@ class StudentHandler
 
         foreach ($materials as $material) {
             $teacher = $material->teacher;
-            $text .= "📄 {$material->title}\n";
+            $text .= '📄 '.e($material->title)."\n";
             $text .= "   👨‍🏫 {$teacher->full_name}\n\n";
         }
 
@@ -186,6 +192,7 @@ class StudentHandler
             $client->sendMessage($ctx->chatId, $text, $buttons);
         }
     }
+
     protected function changeSearchPage(
         UpdateContext $ctx,
         TelegramClient $client,
@@ -197,9 +204,9 @@ class StudentHandler
         )->first();
 
         if (
-            !$user ||
+            ! $user ||
             $user->status !== 'active' ||
-            !in_array($user->role, ['teacher', 'student'], true)
+            ! in_array($user->role, ['teacher', 'student'], true)
         ) {
             $client->answerCallbackQuery(
                 $this->getCallbackId($ctx),
@@ -216,7 +223,7 @@ class StudentHandler
         );
 
         if (
-            !$session ||
+            ! $session ||
             ($session['current_step'] ?? null) !== 'show_results' ||
             empty($session['query'])
         ) {
@@ -231,7 +238,7 @@ class StudentHandler
 
         $page = max(1, $page);
 
-        $results = app(\App\Services\SearchService::class)->search(
+        $results = app(SearchService::class)->search(
             $user,
             $session['query'],
             $page
@@ -242,7 +249,7 @@ class StudentHandler
         if ($results->isEmpty() && $page > 1) {
             $page--;
 
-            $results = app(\App\Services\SearchService::class)->search(
+            $results = app(SearchService::class)->search(
                 $user,
                 $session['query'],
                 $page
@@ -253,13 +260,13 @@ class StudentHandler
         $buttons = [];
 
         foreach ($results as $material) {
-            $text .= '📄 ' . e($material->title) . "\n";
-            $text .= '👨‍🏫 ' . e($material->teacher?->full_name ?? 'Noma’lum ustoz') . "\n\n";
+            $text .= '📄 '.e($material->title)."\n";
+            $text .= '👨‍🏫 '.e($material->teacher?->full_name ?? 'Noma’lum ustoz')."\n\n";
 
             $buttons[] = [
                 Keyboard::button(
-                    '⬇️ ' . \Illuminate\Support\Str::limit($material->title, 25),
-                    'student:download:' . $material->id
+                    '⬇️ '.Str::limit($material->title, 25),
+                    'student:download:'.$material->id
                 ),
             ];
         }
@@ -272,7 +279,7 @@ class StudentHandler
             $buttons[] = [
                 Keyboard::button(
                     '⬅️ Oldingi',
-                    'student:search_prev:' . ($results->currentPage() - 1)
+                    'student:search_prev:'.($results->currentPage() - 1)
                 ),
             ];
         }
@@ -281,7 +288,7 @@ class StudentHandler
             $buttons[] = [
                 Keyboard::button(
                     'Keyingi ➡️',
-                    'student:search_next:' . ($results->currentPage() + 1)
+                    'student:search_next:'.($results->currentPage() + 1)
                 ),
             ];
         }
@@ -297,6 +304,7 @@ class StudentHandler
             $buttons
         );
     }
+
     protected function getCallbackId(UpdateContext $ctx): string
     {
         return $ctx->rawUpdate['callback_query']['id'] ?? '';

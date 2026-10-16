@@ -100,7 +100,7 @@ class TeacherUploadFlowTest extends TestCase
         ])->assertOk();
 
         Http::assertSent(function ($request) {
-            if (!str_contains($request->url(), '/sendMessage')) {
+            if (! str_contains($request->url(), '/sendMessage')) {
                 return false;
             }
 

@@ -2,17 +2,18 @@
 
 namespace App\Console\Commands;
 
-use Illuminate\Console\Command;
 use App\Telegram\TelegramClient;
+use Illuminate\Console\Command;
 
 class TelegramSetWebhookCommand extends Command
 {
     protected $signature = 'telegram:set-webhook';
+
     protected $description = 'Set Telegram webhook URL';
 
     public function handle(): int
     {
-        $client = new TelegramClient();
+        $client = new TelegramClient;
         $url = config('telegram.webhook_url');
         $secret = config('telegram.webhook_secret');
 
@@ -22,10 +23,12 @@ class TelegramSetWebhookCommand extends Command
 
         if ($result['ok'] ?? false) {
             $this->info('✓ Webhook set successfully');
+
             return 0;
         }
 
-        $this->error('✗ Failed: ' . ($result['description'] ?? 'Unknown error'));
+        $this->error('✗ Failed: '.($result['description'] ?? 'Unknown error'));
+
         return 1;
     }
 }

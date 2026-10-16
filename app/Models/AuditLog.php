@@ -14,12 +14,12 @@ class AuditLog extends Model
         'subject_type',
         'subject_id',
         'metadata',
-        'created_at'
+        'created_at',
     ];
 
     protected $casts = [
         'metadata' => 'array', // Changed from 'json' to 'array'
-        'created_at' => 'datetime'
+        'created_at' => 'datetime',
     ];
 
     public function actor()

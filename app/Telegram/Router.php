@@ -15,6 +15,7 @@ class Router
     public function register(string $pattern, string $handler): self
     {
         $this->routes[$pattern] = $handler;
+
         return $this;
     }
 
@@ -24,24 +25,26 @@ class Router
      */
     public function route(UpdateContext $ctx, TelegramClient $client): void
     {
-        if (!$ctx->isCallback()) {
+        if (! $ctx->isCallback()) {
             Log::warning('Router: not a callback');
+
             return;
         }
 
         $parts = explode(':', $ctx->callbackData, 4);
-        $pattern = $parts[0] . ':' . ($parts[1] ?? 'index');
+        $pattern = $parts[0].':'.($parts[1] ?? 'index');
         $handler = $this->routes[$pattern]
-            ?? $this->routes[explode(':', $pattern)[0] . ':*']
+            ?? $this->routes[explode(':', $pattern)[0].':*']
             ?? null;
         Log::info('Router handler diagnostic', [
             'pattern' => $pattern,
             'handler' => $handler,
             'handler_exists' => $handler && class_exists($handler),
         ]);
-        if (!$handler) {
+        if (! $handler) {
             Log::warning("Router: unknown pattern [{$pattern}]");
             $client->answerCallbackQuery($this->getCallbackId($ctx), __('bot.unknown_action'));
+
             return;
         }
 

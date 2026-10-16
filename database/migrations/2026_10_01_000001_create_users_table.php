@@ -17,7 +17,7 @@ return new class extends Migration
             $table->string('teacher_approval_token')->nullable()->unique();
             $table->timestamp('teacher_approved_at')->nullable();
             $table->timestamps();
-            
+
             $table->index('telegram_user_id');
             $table->index('role');
             $table->index('status');

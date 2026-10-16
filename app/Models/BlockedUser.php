@@ -11,12 +11,12 @@ class BlockedUser extends Model
         'blocked_by_admin_id',
         'reason',
         'blocked_at',
-        'unblock_at'
+        'unblock_at',
     ];
 
     protected $casts = [
         'blocked_at' => 'datetime',
-        'unblock_at' => 'datetime'
+        'unblock_at' => 'datetime',
     ];
 
     public function user()

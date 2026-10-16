@@ -4,11 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use App\Telegram\Menus;
-use App\Telegram\UpdateContext;
-use App\Telegram\Handlers\MenuHandler;
-use App\Telegram\TelegramClient;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class MenuHandlerTest extends TestCase

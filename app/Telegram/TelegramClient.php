@@ -8,17 +8,20 @@ use Illuminate\Support\Facades\Log;
 class TelegramClient
 {
     protected string $token;
+
     protected string $apiUrl = 'https://api.telegram.org';
+
+    protected int $timeout = 30;
 
     public function __construct()
     {
-        $this->token = config('telegram.bot_token');
+        $this->token = (string) config('telegram.bot_token');
     }
 
     /**
      * Send text message with inline keyboard
      */
-    public function sendMessage(int $chatId, string $text, array $inlineKeyboard = null): array
+    public function sendMessage(int $chatId, string $text, ?array $inlineKeyboard = null): array
     {
         $payload = [
             'chat_id' => $chatId,
@@ -39,7 +42,7 @@ class TelegramClient
     /**
      * Send document (file)
      */
-    public function sendDocument(int $chatId, $file, string $filename, string $caption = null): array
+    public function sendDocument(int $chatId, $file, string $filename, ?string $caption = null): array
     {
         $payload = [
             'chat_id' => $chatId,
@@ -61,7 +64,10 @@ class TelegramClient
         $payload = [
             'chat_id' => $chatId,
             'message_id' => $messageId,
-            'reply_markup' => json_encode(['inline_keyboard' => $inlineKeyboard]),
+            'reply_markup' => json_encode(
+                ['inline_keyboard' => $inlineKeyboard],
+                JSON_UNESCAPED_UNICODE
+            ),
         ];
 
         return $this->request('editMessageReplyMarkup', $payload);
@@ -70,7 +76,7 @@ class TelegramClient
     /**
      * Edit message text and keyboard
      */
-    public function editMessageText(int $chatId, int $messageId, string $text, array $inlineKeyboard = null): array
+    public function editMessageText(int $chatId, int $messageId, string $text, ?array $inlineKeyboard = null): array
     {
         $payload = [
             'chat_id' => $chatId,
@@ -80,19 +86,21 @@ class TelegramClient
         ];
 
         if ($inlineKeyboard) {
-            $payload['reply_markup'] = json_encode(['inline_keyboard' => $inlineKeyboard]);
+            $payload['reply_markup'] = json_encode(
+                ['inline_keyboard' => $inlineKeyboard],
+                JSON_UNESCAPED_UNICODE
+            );
         }
 
         return $this->request('editMessageText', $payload);
     }
 
     public function editOrSendMessage(
-        int    $chatId,
-        ?int   $messageId,
+        int $chatId,
+        ?int $messageId,
         string $text,
         ?array $inlineKeyboard = null
-    ): array
-    {
+    ): array {
         if ($messageId && $messageId > 0) {
             $result = $this->editMessageText(
                 $chatId,
@@ -152,10 +160,12 @@ class TelegramClient
         $url = "{$this->apiUrl}/file/bot{$this->token}/{$filePath}";
 
         try {
-            $response = Http::get($url);
+            $response = Http::timeout(60)->get($url);
+
             return $response->successful() ? $response->body() : null;
-        } catch (\Exception $e) {
-            Log::error('Telegram file download failed: ' . $e->getMessage());
+        } catch (\Throwable $e) {
+            Log::error('Telegram file download failed: '.$this->mask($e->getMessage()));
+
             return null;
         }
     }
@@ -163,7 +173,7 @@ class TelegramClient
     /**
      * Set webhook
      */
-    public function setWebhook(string $url, string $secretToken = null): array
+    public function setWebhook(string $url, ?string $secretToken = null): array
     {
         $payload = ['url' => $url];
 
@@ -172,6 +182,14 @@ class TelegramClient
         }
 
         return $this->request('setWebhook', $payload);
+    }
+
+    /**
+     * Delete webhook (polling rejimidan oldin kerak)
+     */
+    public function deleteWebhook(): array
+    {
+        return $this->request('deleteWebhook');
     }
 
     /**
@@ -191,31 +209,27 @@ class TelegramClient
             'offset' => $offset,
             'limit' => $limit,
             'timeout' => 30,
-        ]);
+        ], 45);
     }
 
     /**
      * Internal: make request
      */
-    protected function request(string $method, array $params = []): array
+    protected function request(string $method, array $params = [], ?int $timeout = null): array
     {
         $url = "{$this->apiUrl}/bot{$this->token}/{$method}";
 
         try {
-            $response = Http::post($url, $params);
+            $response = Http::timeout($timeout ?? $this->timeout)->post($url, $params);
             $body = $response->json();
 
-            // Log errors
-            if (!($body['ok'] ?? false)) {
-                Log::warning("Telegram API error [{$method}]: " . ($body['description'] ?? 'Unknown'));
+            if (! ($body['ok'] ?? false)) {
+                Log::warning("Telegram API error [{$method}]: ".($body['description'] ?? 'Unknown'));
             }
 
             return $body ?? ['ok' => false];
-        } catch (\Exception $e) {
-            $msg = $e->getMessage();
-            // Mask token in logs
-            $msg = str_replace($this->token, '***', $msg);
-            Log::error("Telegram API failed [{$method}]: {$msg}");
+        } catch (\Throwable $e) {
+            Log::error("Telegram API failed [{$method}]: ".$this->mask($e->getMessage()));
 
             return ['ok' => false];
         }
@@ -229,20 +243,32 @@ class TelegramClient
         $url = "{$this->apiUrl}/bot{$this->token}/{$method}";
 
         try {
-            $response = Http::attach($fileParamName, $file, $filename)->post($url, $params);
+            $response = Http::timeout(120)
+                ->attach($fileParamName, $file, $filename)
+                ->post($url, $params);
             $body = $response->json();
 
-            if (!($body['ok'] ?? false)) {
-                Log::warning("Telegram API error [{$method}]: " . ($body['description'] ?? 'Unknown'));
+            if (! ($body['ok'] ?? false)) {
+                Log::warning("Telegram API error [{$method}]: ".($body['description'] ?? 'Unknown'));
             }
 
             return $body ?? ['ok' => false];
-        } catch (\Exception $e) {
-            $msg = $e->getMessage();
-            $msg = str_replace($this->token, '***', $msg);
-            Log::error("Telegram API failed [{$method}]: {$msg}");
+        } catch (\Throwable $e) {
+            Log::error("Telegram API failed [{$method}]: ".$this->mask($e->getMessage()));
 
             return ['ok' => false];
         }
+    }
+
+    /**
+     * Tokenni matndan yashiradi (loglar va xato xabarlari uchun).
+     */
+    protected function mask(string $message): string
+    {
+        if ($this->token === '') {
+            return $message;
+        }
+
+        return str_replace($this->token, '***', $message);
     }
 }

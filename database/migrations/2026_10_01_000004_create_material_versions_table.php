@@ -19,7 +19,7 @@ return new class extends Migration
             $table->enum('status', ['active', 'replaced', 'retained'])->default('active');
             $table->timestamp('retain_until')->nullable();
             $table->timestamps();
-            
+
             $table->foreign('material_id')->references('id')->on('materials')->onDelete('cascade');
             $table->unique(['material_id', 'version_number']);
         });

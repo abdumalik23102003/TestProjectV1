@@ -2,8 +2,8 @@
 
 namespace Tests\Feature;
 
-use Tests\TestCase;
 use Illuminate\Support\Facades\Http;
+use Tests\TestCase;
 
 class TelegramWebhookTest extends TestCase
 {
@@ -13,7 +13,7 @@ class TelegramWebhookTest extends TestCase
 
         $response = $this->postJson('/api/telegram/webhook', [
             'update_id' => 1,
-            'message' => ['chat' => ['id' => 1], 'from' => ['id' => 1], 'text' => '/start']
+            'message' => ['chat' => ['id' => 1], 'from' => ['id' => 1], 'text' => '/start'],
         ]);
 
         $response->assertStatus(200);
@@ -26,7 +26,7 @@ class TelegramWebhookTest extends TestCase
 
         $response = $this->postJson('/api/telegram/webhook', [
             'update_id' => 1,
-            'message' => ['chat' => ['id' => 1], 'from' => ['id' => 1], 'text' => '/start']
+            'message' => ['chat' => ['id' => 1], 'from' => ['id' => 1], 'text' => '/start'],
         ]);
 
         $response->assertStatus(403);
@@ -38,10 +38,10 @@ class TelegramWebhookTest extends TestCase
         Http::fake();
 
         $response = $this->withHeaders([
-            'X-Telegram-Bot-Api-Secret-Token' => 'secret123'
+            'X-Telegram-Bot-Api-Secret-Token' => 'secret123',
         ])->postJson('/api/telegram/webhook', [
             'update_id' => 1,
-            'message' => ['chat' => ['id' => 1], 'from' => ['id' => 1], 'text' => '/start']
+            'message' => ['chat' => ['id' => 1], 'from' => ['id' => 1], 'text' => '/start'],
         ]);
 
         $response->assertStatus(200);

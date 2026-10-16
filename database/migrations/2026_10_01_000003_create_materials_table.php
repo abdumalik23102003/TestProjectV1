@@ -24,7 +24,7 @@ return new class extends Migration
             $table->string('checksum');
             $table->unsignedBigInteger('current_version_id')->nullable();
             $table->timestamps();
-            
+
             $table->foreign('teacher_id')->references('id')->on('users')->onDelete('cascade');
             $table->foreign('category_id')->references('id')->on('categories')->onDelete('set null');
             $table->index('teacher_id');

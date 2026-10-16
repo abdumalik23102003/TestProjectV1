@@ -16,7 +16,7 @@ return new class extends Migration
             $table->json('payload')->nullable();
             $table->timestamp('expires_at');
             $table->timestamps();
-            
+
             $table->unique(['telegram_user_id', 'process_type']);
         });
     }
